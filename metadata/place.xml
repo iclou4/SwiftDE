@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="place">
+		<_short>Place</_short>
+		<_long>A plugin to position newly opened windows.</_long>
+		<category>Window Management</category>
+		<option name="mode" type="string">
+			<_short>Window placement mode</_short>
+			<_long>Specifies how to position newly opened windows.</_long>
+			<default>center</default>
+			<desc>
+				<value>center</value>
+				<_name>Center</_name>
+			</desc>
+			<desc>
+				<value>cascade</value>
+				<_name>Cascade</_name>
+			</desc>
+			<desc>
+				<value>maximize</value>
+				<_name>Maximize</_name>
+			</desc>
+			<desc>
+				<value>random</value>
+				<_name>Random</_name>
+			</desc>
+			<desc>
+				<value>pointer</value>
+				<_name>Pointer</_name>
+			</desc>
+		</option>
+	</plugin>
+</wayfire>

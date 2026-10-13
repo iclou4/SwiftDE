@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="oswitch">
+		<_short>Output Switcher</_short>
+		<_long>A plugin to change the focused output.</_long>
+		<category>Desktop</category>
+		<option name="next_output" type="activator">
+			<_short>Next output</_short>
+			<_long>Moves focus to the next output with the specified activator.</_long>
+			<default>&lt;super&gt; KEY_O</default>
+		</option>
+		<option name="next_output_with_win" type="activator">
+			<_short>Next output with window</_short>
+			<_long>Moves focus to the next output with the focused window with the specified activator.</_long>
+			<default>&lt;super&gt; &lt;shift&gt; KEY_O</default>
+		</option>
+		<option name="prev_output" type="activator">
+			<_short>Previous output</_short>
+			<_long>Moves focus to the previous output with the specified activator.</_long>
+			<default></default>
+		</option>
+		<option name="prev_output_with_win" type="activator">
+			<_short>Previous output with window</_short>
+			<_long>Moves focus to the previous output with the focused window with the specified activator.</_long>
+			<default></default>
+		</option>
+		<option name="left_output" type="activator">
+			<_short>Left output</_short>
+			<_long>Moves focus to the output on the left.</_long>
+			<default></default>
+		</option>
+		<option name="right_output" type="activator">
+			<_short>Right output</_short>
+			<_long>Moves focus to the output on the right.</_long>
+			<default></default>
+		</option>
+		<option name="above_output" type="activator">
+			<_short>Above output</_short>
+			<_long>Moves focus to the output above.</_long>
+			<default></default>
+		</option>
+		<option name="below_output" type="activator">
+			<_short>Below output</_short>
+			<_long>Moves focus to the output below.</_long>
+			<default></default>
+		</option>
+	</plugin>
+</wayfire>

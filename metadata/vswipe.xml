@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="vswipe">
+		<_short>Viewport Swipe</_short>
+		<_long>A plugin to swipe workspaces in a grid.</_long>
+		<category>Desktop</category>
+		<option name="enable_horizontal" type="bool">
+			<_short>Enable horizontal</_short>
+			<_long>Enables or disables horizontal swiping.</_long>
+			<default>true</default>
+		</option>
+		<option name="enable_vertical" type="bool">
+			<_short>Enable vertical</_short>
+			<_long>Enables or disables vertical swiping.</_long>
+			<default>true</default>
+		</option>
+		<option name="enable_free_movement" type="bool">
+			<_short>Enable free movement</_short>
+			<_long>Enables or disables moving diagonally and more than one workspace at a time.</_long>
+			<default>false</default>
+		</option>
+		<option name="enable_smooth_transition" type="bool">
+			<_short>Enable smooth transition</_short>
+			<_long>Enables or disables smooth transition.</_long>
+			<default>false</default>
+		</option>
+		<option name="duration" type="animation">
+			<_short>Duration</_short>
+			<_long>Sets the duration of the animation in milliseconds.</_long>
+			<default>180ms</default>
+		</option>
+		<option name="background" type="color">
+			<_short>Background color</_short>
+			<_long>Sets the background color.</_long>
+			<default>0.1 0.1 0.1 1.0</default>
+		</option>
+		<option name="fingers" type="int">
+			<_short>Number of fingers</_short>
+			<_long>Specifies the number of fingers to swipe.</_long>
+			<default>4</default>
+		</option>
+		<option name="gap" type="double">
+			<_short>Gap</_short>
+			<_long>Changes the gap in pixels.</_long>
+			<default>32.0</default>
+		</option>
+		<option name="threshold" type="double">
+			<_short>threshold</_short>
+			<_long>Sets the threshold.</_long>
+			<default>0.35</default>
+		</option>
+		<option name="delta_threshold" type="double">
+			<_short>Delta threshold</_short>
+			<_long>Sets the delta threshold.</_long>
+			<default>24.0</default>
+		</option>
+		<option name="speed_factor" type="double">
+			<_short>Speed factor</_short>
+			<_long>Sets the speed factor.</_long>
+			<default>256.0</default>
+		</option>
+		<option name="speed_cap" type="double">
+			<_short>Speed cap</_short>
+			<_long>Sets the speed cap.</_long>
+			<default>0.05</default>
+		</option>
+	</plugin>
+</wayfire>

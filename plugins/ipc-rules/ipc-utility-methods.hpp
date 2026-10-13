@@ -1,0 +1,536 @@
+#pragma once
+#include "config.h"
+#include "ipc-rules-common.hpp"
+#include "wayfire/plugins/ipc/ipc-method-repository.hpp"
+#include "wayfire/debug.hpp"
+#include "wayfire/signal-definitions.hpp"
+#include "wayfire/config-backend.hpp"
+#include <set>
+#include <cstdlib>
+#include <filesystem>
+#include <wayfire/plugin.hpp>
+#include <wayfire/render-manager.hpp>
+#include <wayfire/nonstd/wlroots-full.hpp>
+#include <wayfire/output-layout.hpp>
+#include <wayfire/config/compound-option.hpp>
+#include <wayfire/config/config-manager.hpp>
+
+extern "C" {
+#include <wlr/backend/headless.h>
+#include <wlr/backend/multi.h>
+}
+
+namespace wf
+{
+class ipc_rules_utility_methods_t
+{
+  private:
+    wlr_backend *headless_backend = NULL;
+    std::set<uint64_t> our_outputs;
+
+  public:
+    void init_utility_methods(ipc::method_repository_t *method_repository)
+    {
+        method_repository->register_method("wayfire/configuration", get_wayfire_configuration_info);
+        method_repository->register_method("wayfire/create-headless-output", create_headless_output);
+        method_repository->register_method("wayfire/destroy-headless-output", destroy_headless_output);
+        method_repository->register_method("wayfire/get-config-option", get_config_option);
+        method_repository->register_method("wayfire/list-config-options", list_config_options);
+        method_repository->register_method("wayfire/set-config-options", set_config_options);
+        method_repository->register_method("wayfire/reload-config-metadata", reload_config_metadata);
+        method_repository->register_method("wayfire/reload-plugins", reload_plugins);
+        method_repository->register_method("wayfire/render-metrics", get_render_metrics);
+        method_repository->register_method("wayfire/get-keyboard-state", get_kb_state);
+        method_repository->register_method("wayfire/set-keyboard-state", set_kb_state);
+    }
+
+    void fini_utility_methods(ipc::method_repository_t *method_repository)
+    {
+        method_repository->unregister_method("wayfire/configuration");
+        method_repository->unregister_method("wayfire/create-headless-output");
+        method_repository->unregister_method("wayfire/destroy-headless-output");
+        method_repository->unregister_method("wayfire/get-config-option");
+        method_repository->unregister_method("wayfire/list-config-options");
+        method_repository->unregister_method("wayfire/set-config-options");
+        method_repository->unregister_method("wayfire/reload-config-metadata");
+        method_repository->unregister_method("wayfire/reload-plugins");
+        method_repository->unregister_method("wayfire/render-metrics");
+        method_repository->unregister_method("wayfire/get-keyboard-state");
+        method_repository->unregister_method("wayfire/set-keyboard-state");
+    }
+
+    wf::ipc::method_callback get_wayfire_configuration_info = [=] (wf::json_t)
+    {
+        wf::json_t response;
+
+        response["wayfire-version"] = WAYFIRE_VERSION;
+        response["api-version"]     = WAYFIRE_API_ABI_VERSION;
+        response["plugin-path"]     = PLUGIN_PATH;
+        response["plugin-xml-dir"]  = PLUGIN_XML_DIR;
+        response["xwayland-support"] = WF_HAS_XWAYLAND;
+
+        std::filesystem::path xdg_data_home;
+        if (char *data_home = std::getenv("XDG_DATA_HOME"))
+        {
+            xdg_data_home = data_home;
+        } else if (char *home = std::getenv("HOME"))
+        {
+            xdg_data_home = std::filesystem::path(home) / ".local" / "share";
+        }
+
+        response["external-plugin-path"] = xdg_data_home.empty() ? "" :
+            (xdg_data_home / "wayfire" / "plugins").string();
+        response["external-plugin-xml-dir"] = xdg_data_home.empty() ? "" :
+            (xdg_data_home / "wayfire" / "metadata").string();
+        response["managed-install-prefix"] = xdg_data_home.empty() ? "" :
+            (xdg_data_home / "wayfire" / "plugin-manager" / "install").string();
+
+        response["build-commit"] = wf::version::git_commit;
+        response["build-branch"] = wf::version::git_branch;
+        return response;
+    };
+
+    wf::ipc::method_callback reload_config_metadata = [=] (wf::json_t)
+    {
+        auto& core = wf::get_core();
+        if (!core.config_backend->reload_config_metadata(*core.config))
+        {
+            return wf::ipc::json_error("The current config backend does not support metadata reload");
+        }
+
+        reload_config_signal event;
+        core.emit(&event);
+        return wf::ipc::json_ok();
+    };
+
+    wf::ipc::method_callback reload_plugins = [=] (wf::json_t)
+    {
+        wf::get_core().reload_plugins();
+        return wf::ipc::json_ok();
+    };
+
+    static const char *render_debug_path_to_string(render_debug_path_t path)
+    {
+        switch (path)
+        {
+          case render_debug_path_t::DIRECT_SCANOUT:
+            return "direct-scanout";
+
+          case render_debug_path_t::COMPOSED:
+            return "composed";
+        }
+
+        return "unknown";
+    }
+
+    static const char *render_timer_support_to_string(render_timer_debug_support_t support)
+    {
+        switch (support)
+        {
+          case render_timer_debug_support_t::SUPPORTED:
+            return "supported";
+
+          case render_timer_debug_support_t::UNSUPPORTED:
+            return "unsupported";
+
+          case render_timer_debug_support_t::UNKNOWN:
+            return "unknown";
+        }
+
+        return "unknown";
+    }
+
+    static wf::json_t render_path_metrics_to_json(const render_path_debug_info_t& info)
+    {
+        wf::json_t response;
+        response["paint-budget-ns"] = info.paint_budget_ns;
+        response["miss-guard-ns"]   = info.miss_guard_ns;
+        response["total-budget-ns"] = info.total_budget_ns;
+        response["successful-presentations"] = info.successful_presentations;
+        return response;
+    }
+
+    static wf::json_t render_metrics_to_json(wf::output_t *output)
+    {
+        wf::json_t response;
+        response["output"] = ipc_rules::output_to_json(output);
+
+        const auto info = output->render->get_debug_info();
+        response["min-render-budget-ms"]  = info.min_render_budget_ms;
+        response["dynamic-repaint-delay"] = info.dynamic_repaint_delay;
+        response["vrr-enabled"] = info.vrr_enabled;
+        response["vrr-idle-refresh-rate"] = info.vrr_idle_refresh_rate;
+
+        response["last-scheduled-delay-ns"] = info.last_scheduled_delay_ns;
+        response["has-last-target-presentation"] = info.has_last_target_presentation;
+        response["last-target-presentation-ns"]  = info.last_target_presentation_ns;
+        response["predicted-path"] = render_debug_path_to_string(info.predicted_path);
+
+        response["has-last-presentation"] = info.has_last_presentation;
+        response["last-presentation-ns"]  = info.last_presentation_ns;
+        response["refresh-ns"] = info.refresh_ns;
+        response["pending-scheduler-frames"] = info.pending_scheduler_frames;
+        response["consecutive-scanouts"]     = info.consecutive_scanouts;
+
+        response["composed"] = render_path_metrics_to_json(info.composed);
+        response["direct-scanout"] = render_path_metrics_to_json(info.direct_scanout);
+
+        response["render-timer-support"]  = render_timer_support_to_string(info.render_timer_support);
+        response["pending-render-timers"] = info.pending_render_timers;
+
+        response["output-frame-pending"] = info.output_frame_pending;
+        response["output-needs-frame"]   = info.output_needs_frame;
+        response["repaint-pending"] = info.repaint_pending;
+        return response;
+    }
+
+    wf::ipc::method_callback get_render_metrics = [=] (const wf::json_t& data)
+    {
+        auto output_name = wf::ipc::json_get_optional_string(data, "output");
+        auto output_id   = wf::ipc::json_get_optional_uint64(data, "output-id");
+
+        if (!output_id.has_value())
+        {
+            output_id = wf::ipc::json_get_optional_uint64(data, "output_id");
+        }
+
+        if (output_name.has_value() || output_id.has_value())
+        {
+            wf::output_t *output = NULL;
+            if (output_name.has_value())
+            {
+                output = wf::get_core().output_layout->find_output(output_name.value());
+            } else
+            {
+                output = wf::ipc::find_output_by_id(output_id.value());
+            }
+
+            if (!output)
+            {
+                return wf::ipc::json_error("Output not found!");
+            }
+
+            return render_metrics_to_json(output);
+        }
+
+        wf::json_t response = wf::json_t::array();
+        for (auto output : wf::get_core().output_layout->get_outputs())
+        {
+            response.append(render_metrics_to_json(output));
+        }
+
+        return response;
+    };
+
+    wf::ipc::method_callback create_headless_output = [=] (const wf::json_t& data)
+    {
+        auto width  = wf::ipc::json_get_uint64(data, "width");
+        auto height = wf::ipc::json_get_uint64(data, "height");
+
+        if (!headless_backend)
+        {
+            auto& core = wf::get_core();
+            headless_backend = wlr_headless_backend_create(core.ev_loop);
+            wlr_multi_backend_add(core.backend, headless_backend);
+            wlr_backend_start(headless_backend);
+        }
+
+        auto handle = wlr_headless_add_output(headless_backend, width, height);
+        auto wo     = wf::get_core().output_layout->find_output(handle);
+        our_outputs.insert(wo->get_id());
+
+        auto response = wf::ipc::json_ok();
+        response["output"] = ipc_rules::output_to_json(wo);
+        return response;
+    };
+
+    wf::ipc::method_callback destroy_headless_output = [=] (const wf::json_t& data)
+    {
+        auto output    = wf::ipc::json_get_optional_string(data, "output");
+        auto output_id = wf::ipc::json_get_optional_uint64(data, "output-id");
+
+        if (!output.has_value() && !output_id.has_value())
+        {
+            return wf::ipc::json_error("Missing `output` or `output-id`!");
+        }
+
+        wf::output_t *wo = NULL;
+        if (output.has_value())
+        {
+            wo = wf::get_core().output_layout->find_output(output.value());
+        } else if (output_id.has_value())
+        {
+            wo = wf::ipc::find_output_by_id(output_id.value());
+        }
+
+        if (!wo)
+        {
+            return wf::ipc::json_error("Output not found!");
+        }
+
+        if (!our_outputs.count(wo->get_id()))
+        {
+            return wf::ipc::json_error("Output is not a headless output created from an IPC command!");
+        }
+
+        our_outputs.erase(wo->get_id());
+        wlr_output_destroy(wo->handle);
+        return wf::ipc::json_ok();
+    };
+
+    wf::json_t option_value_to_json(const std::shared_ptr<wf::config::option_base_t>& option)
+    {
+        if (auto compound = std::dynamic_pointer_cast<wf::config::compound_option_t>(option))
+        {
+            wf::json_t values_json = wf::json_t::array();
+            auto untyped = compound->get_value_untyped();
+
+            for (const auto& tuple : untyped)
+            {
+                wf::json_t inner = wf::json_t::array();
+                for (const auto& val : tuple)
+                {
+                    inner.append(val);
+                }
+
+                values_json.append(inner);
+            }
+
+            wf::json_t entry = wf::json_t();
+            entry["value"] = values_json;
+            return entry;
+        } else
+        {
+            wf::json_t entry = wf::json_t();
+            entry["value"]   = option->get_value_str();
+            entry["default"] = option->get_default_value_str();
+            return entry;
+        }
+    }
+
+    wf::ipc::method_callback list_config_options = [=] (const wf::json_t& data)
+    {
+        auto response = wf::ipc::json_ok();
+        wf::json_t sections_json = wf::json_t();
+
+        for (auto& section : wf::get_core().config->get_all_sections())
+        {
+            std::string section_name = section->get_name();
+            wf::json_t section_obj   = wf::json_t();
+
+            for (auto& opt : section->get_registered_options())
+            {
+                std::string option_name = opt->get_name();
+                section_obj[option_name] = this->option_value_to_json(opt);
+            }
+
+            sections_json[section_name] = section_obj;
+        }
+
+        response["options"] = sections_json;
+        return response;
+    };
+
+    wf::ipc::method_callback get_config_option = [=] (const wf::json_t& data)
+    {
+        auto option_name = wf::ipc::json_get_string(data, "option");
+        auto option = wf::get_core().config->get_option(option_name);
+        if (!option)
+        {
+            return wf::ipc::json_error("Option not found!");
+        }
+
+        auto response = wf::ipc::json_ok();
+        auto entry    = this->option_value_to_json(option);
+        for (auto& key : entry.get_member_names())
+        {
+            response[key] = entry[key];
+        }
+
+        return response;
+    };
+
+    std::string json_to_string(const wf::json_t& data)
+    {
+        if (data.is_string())
+        {
+            return data;
+        }
+
+        std::string buffer;
+        data.map_serialized([&] (const char *src, size_t size)
+        {
+            buffer = std::string{src, size};
+        });
+
+        return buffer;
+    }
+
+    std::optional<std::string> add_compound_entry(const wf::json_t& entry,
+        const std::string& entry_name,
+        const wf::config::compound_option_t::entries_t& tuple_entries,
+        std::vector<std::vector<std::string>>& values)
+    {
+        values.emplace_back();
+        values.back().push_back(entry_name);
+
+        if (!entry.is_object() && (tuple_entries.size() == 1))
+        {
+            auto str_value = json_to_string(entry);
+            if (!tuple_entries[0]->is_parsable(str_value))
+            {
+                return "Failed to parse entry " + str_value;
+            }
+
+            values.back().push_back(str_value);
+        } else if (entry.is_array())
+        {
+            // A simple tuple => copy one to one
+            if (entry.size() != tuple_entries.size())
+            {
+                return "Number of entries does not match option type!";
+            }
+
+            for (size_t i = 0; i < entry.size(); i++)
+            {
+                auto str_value = json_to_string(entry[i]);
+                if (!tuple_entries[i]->is_parsable(str_value))
+                {
+                    return "Failed to parse entry " + str_value;
+                }
+
+                values.back().push_back(str_value);
+            }
+        } else if (entry.is_object())
+        {
+            for (size_t i = 0; i < tuple_entries.size(); i++)
+            {
+                if (entry.has_member(tuple_entries[i]->get_name()))
+                {
+                    auto str_value = json_to_string(entry[tuple_entries[i]->get_name()]);
+                    if (!tuple_entries[i]->is_parsable(str_value))
+                    {
+                        return "Failed to parse entry " + str_value;
+                    }
+
+                    values.back().push_back(str_value);
+                } else if (tuple_entries[i]->get_default_value().has_value())
+                {
+                    values.back().push_back(tuple_entries[i]->get_default_value().value());
+                } else
+                {
+                    return "Missing entry without default value " + tuple_entries[i]->get_name();
+                }
+            }
+        } else
+        {
+            return "Compound entry must be an array or object";
+        }
+
+        return {};
+    }
+
+    std::optional<std::string> parse_compound_json(const wf::json_t& data,
+        std::shared_ptr<config::compound_option_t> option)
+    {
+        std::vector<std::vector<std::string>> values;
+        const auto& tuple_entries = option->get_entries();
+        int counter = 0;
+
+        if (data.is_array())
+        {
+            for (size_t i = 0; i < data.size(); i++)
+            {
+                std::string entry_name = "autogenerated" + std::to_string(counter++);
+                if (auto err = add_compound_entry(data[i], entry_name, tuple_entries, values))
+                {
+                    return err;
+                }
+            }
+        } else if (data.is_object())
+        {
+            for (auto& key : data.get_member_names())
+            {
+                if (auto err = add_compound_entry(data[key], key, tuple_entries, values))
+                {
+                    return err;
+                }
+            }
+        } else
+        {
+            return "Compound value must be an array or object!";
+        }
+
+        option->set_value_untyped(values);
+        return {};
+    }
+
+    wf::ipc::method_callback set_config_options = [=] (const wf::json_t& data)
+        -> json_t
+    {
+        if (!data.is_object())
+        {
+            return wf::ipc::json_error("Options must be an object!");
+        }
+
+        for (auto& option : data.get_member_names())
+        {
+            auto opt = wf::get_core().config->get_option(option);
+            if (!opt)
+            {
+                return wf::ipc::json_error(option + ": Option not found!");
+            }
+
+            if (auto compound = std::dynamic_pointer_cast<wf::config::compound_option_t>(opt))
+            {
+                auto error = parse_compound_json(data[option], compound);
+                if (error.has_value())
+                {
+                    return wf::ipc::json_error(option + ": " + error.value());
+                }
+            } else
+            {
+                if (!opt->set_value_str(json_to_string(data[option])))
+                {
+                    return wf::ipc::json_error(option + ": Invalid value for option " +
+                        std::string(json_to_string(data[option])) + "!");
+                }
+            }
+
+            opt->set_locked(true);
+        }
+
+        reload_config_signal event;
+        wf::get_core().emit(&event);
+        return wf::ipc::json_ok();
+    };
+
+    wf::ipc::method_callback get_kb_state = [=] (const wf::json_t& data) -> json_t
+    {
+        auto seat     = wf::get_core().get_current_seat();
+        auto keyboard = wlr_seat_get_keyboard(seat);
+        return ipc_rules::get_keyboard_state(keyboard);
+    };
+
+    wf::ipc::method_callback set_kb_state = [=] (const wf::json_t& data) -> json_t
+    {
+        auto seat     = wf::get_core().get_current_seat();
+        auto keyboard = wlr_seat_get_keyboard(seat);
+        uint32_t index = wf::ipc::json_get_uint64(data, "layout-index");
+
+        if (!keyboard)
+        {
+            return wf::ipc::json_error("no keyboard currently in use!");
+        }
+
+        if (index >= xkb_keymap_num_layouts(keyboard->keymap))
+        {
+            return wf::ipc::json_error("invalid layout index!");
+        }
+
+        wlr_keyboard_notify_modifiers(keyboard, keyboard->modifiers.depressed,
+            keyboard->modifiers.latched, keyboard->modifiers.locked, index);
+        return wf::ipc::json_ok();
+    };
+};
+}

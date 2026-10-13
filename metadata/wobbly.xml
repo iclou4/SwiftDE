@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="wobbly">
+		<_short>Wobbly</_short>
+		<_long>A plugin to get wobbly windows.</_long>
+		<category>Effects</category>
+		<option name="friction" type="double">
+			<_short>Friction</_short>
+			<_long>Sets the friction value.</_long>
+			<default>3.0</default>
+		</option>
+		<option name="spring_k" type="double">
+			<_short>Spring constant</_short>
+			<_long>Sets the spring constant.</_long>
+			<default>8.0</default>
+		</option>
+		<option name="grid_resolution" type="int">
+			<_short>Grid resolution</_short>
+			<_long>Sets the grid resolution.</_long>
+			<default>6</default>
+		</option>
+	</plugin>
+</wayfire>

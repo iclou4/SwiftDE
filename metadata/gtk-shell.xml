@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="gtk-shell">
+		<_short>GTK Shell Protocol</_short>
+		<_long>An implementation of the gtk-shell protocol.</_long>
+		<category>Utility</category>
+		<option name="global_menu_bar" type="bool">
+			<_short>Advertise global menu bar support</_short>
+			<_long>This will cause compatible GTK3 apps to export their menus via DBus. You need a compatible global menu client program to display the menus.</_long>
+			<default>false</default>
+		</option>
+	</plugin>
+</wayfire>

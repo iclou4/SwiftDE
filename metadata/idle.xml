@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="idle">
+		<_short>Idle</_short>
+		<_long>A plugin for idle settings, such as the screensaver and DPMS.</_long>
+		<category>Desktop</category>
+		<!-- Key-bindings -->
+		<option name="toggle" type="activator">
+			<_short>Toggle</_short>
+			<_long>Disables the compositor going idle with the specified activator.  Pressing again reactivates.</_long>
+			<default>none</default>
+		</option>
+		<!-- Screensaver -->
+		<option name="screensaver_timeout" type="int">
+			<_short>Screensaver timeout</_short>
+			<_long>Displays the screensaver after the specified seconds of inactivity.  Setting the value to **-1** disables the screensaver.</_long>
+			<default>3600</default>
+		</option>
+		<!-- DPMS -->
+		<option name="dpms_timeout" type="int">
+			<_short>DPMS timeout</_short>
+			<_long>Enters power saving mode after the specified seconds of inactivity.  Setting the value to **-1** disables power saving.</_long>
+			<default>-1</default>
+		</option>
+		<!-- Disable on fullscreen -->
+		<option name="disable_on_fullscreen" type="bool">
+			<_short>Disable on fullscreen</_short>
+			<_long>Disables idle on fullscreen.</_long>
+			<default>true</default>
+		</option>
+		<!-- Disable initially -->
+		<option name="disable_initially" type="bool">
+			<_short>Disable idle timeout initially</_short>
+			<_long>Disables idle timeout innitially as if the toggle was called once after loading the plugin.</_long>
+			<default>false</default>
+		</option>
+		<!-- Screensaver animation -->
+		<option name="cube_zoom_speed" type="int">
+			<_short>Cube zoom speed</_short>
+			<_long>Sets the zoom speed.  The speed means how long it will take from the time the screensaver starts to the time the cube reaches `idle.cube_max_zoom`.</_long>
+			<default>1000</default>
+		</option>
+		<option name="cube_rotate_speed" type="double">
+			<_short>Cube rotate speed</_short>
+			<_long>Sets the speed rotation of the cube.</_long>
+			<default>1.0</default>
+			<precision>0.01</precision>
+		</option>
+		<option name="cube_max_zoom" type="double">
+			<_short>Cube max zoom</_short>
+			<_long>Sets the maximum zoom level.</_long>
+			<default>1.5</default>
+		</option>
+	</plugin>
+</wayfire>

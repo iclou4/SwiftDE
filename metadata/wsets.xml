@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="wsets">
+		<_short>Workspace Sets</_short>
+		<_long>A plugin which allows manipulation of workspace sets.</_long>
+		<category>Desktop</category>
+		<option name="wsets_bindings" type="dynamic-list" type-hint="dict">
+			<_short>Bind/Select workspace set to current output</_short>
+			<_long>A binding to bind and/or select the workspace set #N to the current output.</_long>
+			<entry prefix="wset_" type="activator"/>
+		</option>
+		<option name="send_window_bindings" type="dynamic-list" type-hint="dict">
+			<_short>Move window to workspace set</_short>
+			<_long>A binding to move the currently focused window to the workspace set #N.</_long>
+			<entry prefix="send_to_wset_" type="activator"/>
+		</option>
+		<option name="label_duration" type="animation">
+			<_short>Label duration</_short>
+			<_long>Sets the duration in milliseconds for which the workspace set label is shown.</_long>
+			<default>2s linear</default>
+		</option>
+	</plugin>
+</wayfire>

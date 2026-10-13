@@ -1,0 +1,111 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="decoration">
+		<_short>Decoration</_short>
+		<_long>Default decorations around XWayland windows.</_long>
+		<category>Effects</category>
+		<option name="font" type="string">
+			<_short>Font</_short>
+			<_long>Sets the font to use for the title bars.</_long>
+			<default>sans-serif</default>
+		</option>
+		<option name="font_color" type="color">
+			<_short>Font color</_short>
+			<_long>Sets the font color to use for the title bars.</_long>
+			<default>#ffffffff</default>
+		</option>
+		<option name="font_scale" type="double">
+			<_short>Font scale</_short>
+			<_long>Sets the font scale to use for the title bars.</_long>
+			<default>0.8</default>
+			<max>1.0</max>
+			<min>0.1</min>
+		</option>
+		<option name="title_halign" type="string">
+			<_short>Title horizontal alignment</_short>
+			<_long>Sets the horizontal alignment of the title text. Valid values are left, center and right.</_long>
+			<default>left</default>
+			<desc>
+				<value>left</value>
+				<_name>left</_name>
+			</desc>
+			<desc>
+				<value>center</value>
+				<_name>center</_name>
+			</desc>
+			<desc>
+				<value>right</value>
+				<_name>right</_name>
+			</desc>
+		</option>
+		<option name="title_valign" type="string">
+			<_short>Title vertical alignment</_short>
+			<_long>Sets the vertical alignment of the title text. Valid values are top, center and bottom.</_long>
+			<default>top</default>
+			<desc>
+				<value>top</value>
+				<_name>top</_name>
+			</desc>
+			<desc>
+				<value>center</value>
+				<_name>center</_name>
+			</desc>
+			<desc>
+				<value>bottom</value>
+				<_name>bottom</_name>
+			</desc>
+		</option>
+		<option name="title_height" type="int">
+			<_short>Title bar height</_short>
+			<_long>Sets the height of the title bars in pixels.</_long>
+			<default>30</default>
+			<max>100</max>
+			<min>0</min>
+		</option>
+		<option name="border_size" type="int">
+			<_short>Border size</_short>
+			<_long>Sets the border size in pixels.</_long>
+			<default>4</default>
+			<max>100</max>
+			<min>0</min>
+		</option>
+		<option name="button_order" type="string">
+			<_short>Order of window buttons</_short>
+			<_long>Sets the order of the window buttons.</_long>
+			<default>minimize maximize close</default>
+		</option>
+		<option name="button_scale" type="double">
+			<_short>Buttons scale</_short>
+			<_long>Sets the scale for window buttons.</_long>
+			<default>0.7</default>
+			<max>1.0</max>
+			<min>0.1</min>
+		</option>
+		<option name="button_padding" type="int">
+			<_short>Buttons padding</_short>
+			<_long>Sets the vertical padding for window buttons.</_long>
+			<default>4</default>
+		</option>
+		<!-- Colors -->
+		<option name="active_color" type="color">
+			<_short>Color when window is active</_short>
+			<_long>Sets the color when the window is active.</_long>
+			<default>#222222aa</default>
+		</option>
+		<option name="inactive_color" type="color">
+			<_short>Color when window is inactive</_short>
+			<_long>Sets the color when the window is inactive.</_long>
+			<default>#333333dd</default>
+		</option>
+		<option name="ignore_views" type="string">
+			<_short>Decoration disabled for specified window types</_short>
+			<_long>Disables window decoration for windows matching the specified criteria.</_long>
+			<default>none</default>
+		</option>
+		<option name="forced_views" type="string">
+			<_short>Force decorations for specified window types</_short>
+			<_long>Forces window decoration for windows matching the specified criteria, overriding client decoration preference.</_long>
+			<default>none</default>
+		</option>
+	</plugin>
+</wayfire>

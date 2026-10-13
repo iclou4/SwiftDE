@@ -1,0 +1,726 @@
+#include "wayfire/unstable/wlr-surface-node.hpp"
+#include "wayfire/geometry.hpp"
+#include "wayfire/render-manager.hpp"
+#include "wayfire/scene-render.hpp"
+#include "wayfire/scene.hpp"
+#include "wlr-surface-pointer-interaction.hpp"
+#include "wlr-surface-touch-interaction.cpp"
+#include "wayfire/output-layout.hpp"
+#include <glm/gtc/matrix_transform.hpp>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <wayfire/signal-provider.hpp>
+#include <wlr/util/box.h>
+
+wf::scene::surface_state_t::surface_state_t(surface_state_t&& other)
+{
+    if (&other != this)
+    {
+        *this = std::move(other);
+    }
+}
+
+wf::scene::surface_state_t& wf::scene::surface_state_t::operator =(surface_state_t&& other)
+{
+    if (current_buffer)
+    {
+        wlr_buffer_unlock(current_buffer);
+    }
+
+    current_buffer = other.current_buffer;
+    texture = other.texture;
+    acquire_point = std::move(other.acquire_point);
+    accumulated_damage = other.accumulated_damage;
+    opaque_region = other.opaque_region;
+    seq   = other.seq;
+    size  = other.size;
+    scale = other.scale;
+    src_viewport = other.src_viewport;
+    transform    = other.transform;
+    color_transform = other.color_transform;
+
+    other.current_buffer = NULL;
+    other.texture = NULL;
+    other.accumulated_damage.clear();
+    other.opaque_region.clear();
+    other.src_viewport.reset();
+    other.color_transform = wf::color_transform_t{};
+    other.seq.reset();
+    return *this;
+}
+
+void wf::scene::surface_state_t::merge_state(wlr_surface *surface)
+{
+    const bool same_commit = seq == surface->current.seq;
+
+    // NB: lock the new buffer first, in case it is the same as the old one
+    if (surface->buffer)
+    {
+        wlr_buffer_lock(&surface->buffer->base);
+    }
+
+    if (current_buffer)
+    {
+        wlr_buffer_unlock(current_buffer);
+    }
+
+    acquire_point = {};
+
+    if (surface->buffer)
+    {
+        this->current_buffer = &surface->buffer->base;
+        this->texture = surface->buffer->texture;
+        this->size    = {surface->current.width, surface->current.height};
+        this->scale   = surface->current.scale;
+        this->transform = {surface->current.transform};
+
+        auto sync_state = wlr_linux_drm_syncobj_v1_get_surface_state(surface);
+        if (sync_state)
+        {
+            acquire_point = {sync_state->acquire_timeline, sync_state->acquire_point};
+            const bool new_buffer_commit = !same_commit &&
+                (surface->current.committed & WLR_SURFACE_STATE_BUFFER);
+            if (new_buffer_commit && !wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(
+                sync_state, current_buffer))
+            {
+                LOGE("Failed to track explicit-sync surface buffer release");
+                wl_resource_post_no_memory(surface->resource);
+            }
+        }
+    } else
+    {
+        this->current_buffer = NULL;
+        this->texture = NULL;
+        this->size    = {0, 0};
+        this->scale   = 1;
+    }
+
+    // The wp_color_management_v1 protocol nominally treats surfaces without an image description
+    // as sRGB, but for compositing purposes sRGB and gamma 2.2 are approximately equivalent. We
+    // use gamma 2.2 here so that the surface forward-EOTF and the SDR output inverse-EOTF go
+    // through different code paths in the renderer (avoiding a fast-path that would short-circuit
+    // proper linear-space blending when both happen to be sRGB).
+    this->color_transform = wf::color_transform_t{};
+    this->color_transform.transfer_function = WLR_COLOR_TRANSFER_FUNCTION_GAMMA22;
+    const wlr_image_description_v1_data *img_desc =
+        wlr_surface_get_image_description_v1_data(surface);
+    if (img_desc != NULL)
+    {
+        if (img_desc->tf_named != 0)
+        {
+            this->color_transform.transfer_function = wlr_color_manager_v1_transfer_function_to_wlr(
+                (wp_color_manager_v1_transfer_function)img_desc->tf_named);
+        }
+
+        if (img_desc->primaries_named != 0)
+        {
+            this->color_transform.primaries = wlr_color_manager_v1_primaries_to_wlr(
+                (wp_color_manager_v1_primaries)img_desc->primaries_named);
+        }
+    }
+
+    const wlr_color_representation_v1_surface_state *color_repr =
+        wlr_color_representation_v1_get_surface_state(surface);
+    if (color_repr != NULL)
+    {
+        this->color_transform.alpha_mode = wlr_color_representation_v1_alpha_mode_to_wlr(
+            color_repr->alpha_mode);
+
+        if (color_repr->coefficients != 0)
+        {
+            this->color_transform.color_encoding = wlr_color_representation_v1_color_encoding_to_wlr(
+                (wp_color_representation_surface_v1_coefficients)color_repr->coefficients);
+        }
+
+        if (color_repr->range != 0)
+        {
+            this->color_transform.color_range = wlr_color_representation_v1_color_range_to_wlr(
+                (wp_color_representation_surface_v1_range)color_repr->range);
+        }
+
+        if (color_repr->chroma_location != 0)
+        {
+            this->color_transform.chroma_location = wlr_color_representation_v1_chroma_location_to_wlr(
+                (wp_color_representation_surface_v1_chroma_location)color_repr->chroma_location);
+        }
+    }
+
+    if (surface->current.viewport.has_src)
+    {
+        wlr_fbox fbox;
+        wlr_surface_get_buffer_source_box(surface, &fbox);
+        this->src_viewport = fbox;
+    } else
+    {
+        this->src_viewport.reset();
+    }
+
+    this->seq = surface->current.seq;
+
+    wf::region_t current_damage_integer;
+    wlr_surface_get_effective_damage(surface, current_damage_integer.to_pixman());
+    this->accumulated_damage |= wf::regionf_t{current_damage_integer};
+    this->opaque_region = wf::regionf_t{&surface->opaque_region};
+}
+
+wf::scene::surface_state_t::~surface_state_t()
+{
+    if (current_buffer)
+    {
+        wlr_buffer_unlock(current_buffer);
+    }
+}
+
+wf::scene::wlr_surface_node_t::wlr_surface_node_t(wlr_surface *surface, bool autocommit) :
+    node_t(false), autocommit(autocommit)
+{
+    this->surface = surface;
+    this->ptr_interaction = std::make_unique<wlr_surface_pointer_interaction_t>(surface, this);
+    this->tch_interaction = std::make_unique<wlr_surface_touch_interaction_t>(surface);
+
+    this->on_surface_destroyed.set_callback([=] (void*)
+    {
+        this->surface = NULL;
+        this->ptr_interaction = std::make_unique<pointer_interaction_t>();
+        this->tch_interaction = std::make_unique<touch_interaction_t>();
+
+        on_surface_commit.disconnect();
+        on_surface_destroyed.disconnect();
+    });
+
+    this->on_surface_commit.set_callback([=] (void*)
+    {
+        if (this->autocommit)
+        {
+            apply_current_surface_state();
+        }
+
+        for (auto& [wo, _] : visibility)
+        {
+            wo->render->schedule_redraw();
+        }
+    });
+
+    on_surface_destroyed.connect(&surface->events.destroy);
+    on_surface_commit.connect(&surface->events.commit);
+    send_frame_done(false);
+
+    current_state.merge_state(surface);
+    this->size_on_primary_output = calculate_primary_output_size(current_state);
+
+    on_output_remove.set_callback([&] (wf::output_removed_signal *ev)
+    {
+        visibility.erase(ev->output);
+        pending_visibility_delta.erase(ev->output);
+    });
+    wf::get_core().output_layout->connect(&on_output_remove);
+}
+
+wf::dimensionsf_t wf::scene::wlr_surface_node_t::calculate_primary_output_size(const surface_state_t& state)
+{
+    wf::dimensionsf_t new_size = wf::dimensionsf_t{state.size};
+    static wf::option_wrapper_t<bool> use_native_buffer_size{"workarounds/use_native_buffer_size"};
+
+    // Guess surface size based on the primary output scale.
+    // This is aimed at fixing issues with fractional scaling, where the surface size in logical and
+    // buffer coordinates differ.
+    //
+    // By calculating the floating size in logical coordinates, we can ensure we render aligned with the
+    // underlying pixel grid and avoid blurriness.
+    if (auto primary_output = guess_primary_output();
+        primary_output && state.current_buffer && use_native_buffer_size)
+    {
+        auto vp = state.src_viewport.value_or(wlr_fbox{0, 0,
+            (float)state.current_buffer->width, (float)state.current_buffer->height});
+
+        if (state.transform & WL_OUTPUT_TRANSFORM_90)
+        {
+            std::swap(vp.width, vp.height);
+        }
+
+        const float pixel_aligned_width  = vp.width / primary_output->get_scale();
+        const float pixel_aligned_height = vp.height / primary_output->get_scale();
+
+        if (std::abs(pixel_aligned_width - new_size.width) < 1.0f / primary_output->get_scale())
+        {
+            new_size.width = pixel_aligned_width;
+        }
+
+        if (std::abs(pixel_aligned_height - new_size.height) < 1.0f / primary_output->get_scale())
+        {
+            new_size.height = pixel_aligned_height;
+        }
+    }
+
+    return new_size;
+}
+
+void wf::scene::wlr_surface_node_t::apply_state(surface_state_t&& state)
+{
+    const bool size_changed = current_state.size != state.size;
+    if (size_changed)
+    {
+        state.accumulated_damage |= wf::construct_box({0, 0}, current_state.size);
+        state.accumulated_damage |= wf::construct_box({0, 0}, state.size);
+    }
+
+    this->current_state = std::move(state);
+    this->size_on_primary_output = calculate_primary_output_size(current_state);
+    this->current_state.opaque_region &= get_render_geometry();
+
+    wf::scene::damage_node(this, current_state.accumulated_damage);
+    if (size_changed)
+    {
+        scene::update(this->shared_from_this(), scene::update_flag::GEOMETRY);
+    }
+}
+
+void wf::scene::wlr_surface_node_t::apply_current_surface_state()
+{
+    if (this->current_state.seq == surface->current.seq)
+    {
+        // Already up to date.
+        return;
+    }
+
+    surface_state_t state;
+    state.merge_state(surface);
+    this->apply_state(std::move(state));
+}
+
+std::optional<wf::scene::input_node_t> wf::scene::wlr_surface_node_t::find_node_at(const wf::pointf_t& at)
+{
+    if (!surface)
+    {
+        return {};
+    }
+
+    if (wlr_surface_point_accepts_input(surface, at.x, at.y))
+    {
+        wf::scene::input_node_t result;
+        result.node = this;
+        result.local_coords = at;
+        return result;
+    }
+
+    return {};
+}
+
+std::string wf::scene::wlr_surface_node_t::stringify() const
+{
+    std::ostringstream name;
+    name << "wlr-surface-node ";
+    if (surface)
+    {
+        name << "surface";
+    } else
+    {
+        name << "inert";
+    }
+
+    name << " " << stringify_flags();
+    return name.str();
+}
+
+wf::pointer_interaction_t& wf::scene::wlr_surface_node_t::pointer_interaction()
+{
+    return *this->ptr_interaction;
+}
+
+wf::touch_interaction_t& wf::scene::wlr_surface_node_t::touch_interaction()
+{
+    return *this->tch_interaction;
+}
+
+void wf::scene::wlr_surface_node_t::send_frame_done(bool delay_until_vblank)
+{
+    if (!surface)
+    {
+        return;
+    }
+
+    if (!delay_until_vblank || visibility.empty())
+    {
+        timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        wlr_surface_send_frame_done(surface, &now);
+    } else
+    {
+        for (auto& [wo, _] : visibility)
+        {
+            wlr_output_schedule_frame(wo->handle);
+        }
+    }
+}
+
+class wf::scene::wlr_surface_node_t::wlr_surface_render_instance_t : public render_instance_t
+{
+    std::shared_ptr<wlr_surface_node_t> self;
+    wf::signal::connection_t<wf::frame_done_signal> on_frame_done = [=] (wf::frame_done_signal *ev)
+    {
+        self->send_frame_done(false);
+    };
+
+    wf::output_t *visible_on;
+    damage_callback push_damage;
+    wf::regionf_t last_visibility;
+
+    wf::signal::connection_t<node_damage_signal> on_surface_damage =
+        [=] (node_damage_signal *data)
+    {
+        if (self->surface)
+        {
+            // Make sure to expand damage, because stretching the surface may cause additional damage.
+            const float scale = self->surface->current.scale;
+            const float output_scale = visible_on ? visible_on->handle->scale : 1.0;
+            if (scale != output_scale)
+            {
+                data->region.expand_edges(std::ceil(std::abs(scale - output_scale)));
+            }
+        }
+
+        static wf::option_wrapper_t<bool> use_opaque_optimizations{
+            "workarounds/enable_opaque_region_damage_optimizations"
+        };
+
+        if (use_opaque_optimizations)
+        {
+            push_damage(data->region & last_visibility);
+        } else
+        {
+            push_damage(data->region);
+        }
+    };
+
+  public:
+    wlr_surface_render_instance_t(std::shared_ptr<wlr_surface_node_t> self,
+        damage_callback push_damage, wf::output_t *visible_on)
+    {
+        if (visible_on)
+        {
+            self->handle_enter(visible_on);
+        }
+
+        this->self = self;
+        this->push_damage = push_damage;
+        this->visible_on  = visible_on;
+        self->connect(&on_surface_damage);
+        this->last_visibility |= wf::geometry_t{(double)(INT_MIN / 2), (double)(INT_MIN / 2), (double)INT_MAX,
+            (double)INT_MAX};
+    }
+
+    ~wlr_surface_render_instance_t()
+    {
+        if (visible_on)
+        {
+            self->handle_leave(visible_on);
+        }
+    }
+
+    void schedule_instructions(std::vector<render_instruction_t>& instructions,
+        const wf::render_target_t& target, wf::regionf_t& damage) override
+    {
+        wf::regionf_t our_damage = damage & self->get_bounding_box();
+        if (!our_damage.empty())
+        {
+            instructions.push_back(render_instruction_t{
+                .instance = this,
+                .target   = target,
+                .damage   = std::move(our_damage),
+            });
+
+            damage ^= self->current_state.opaque_region;
+        }
+    }
+
+    void render(const wf::scene::render_instruction_t& data) override
+    {
+        if (!self->current_state.current_buffer)
+        {
+            return;
+        }
+
+        data.pass->add_texture(self->to_texture(), data.target, self->get_render_geometry(), data.damage);
+    }
+
+    void presentation_feedback(wf::output_t *output) override
+    {
+        if (self->surface)
+        {
+            wlr_presentation_surface_textured_on_output(self->surface, output->handle);
+        }
+    }
+
+    direct_scanout try_scanout(wf::output_t *output) override
+    {
+        if (!self->surface)
+        {
+            return direct_scanout::SKIP;
+        }
+
+        if (self->get_bounding_box() != output->get_relative_geometry())
+        {
+            return direct_scanout::OCCLUSION;
+        }
+
+        // Must have a wlr surface with the correct scale and transform
+        auto wlr_surf = self->surface;
+        if ((self->current_state.scale != output->handle->scale) ||
+            (self->current_state.transform != output->handle->transform))
+        {
+            return direct_scanout::OCCLUSION;
+        }
+
+        // Finally, the opaque region must be the full surface.
+        wf::regionf_t non_opaque{output->get_relative_geometry()};
+        non_opaque ^= self->current_state.opaque_region;
+        if (!non_opaque.empty())
+        {
+            return direct_scanout::OCCLUSION;
+        }
+
+        // Direct scanout bypasses the renderer's color conversion. On an HDR (PQ/BT.2020)
+        // output, an SDR surface's pixels would reach the display unconverted, producing
+        // wrong colors on AMDGPU. Nvidia additionally has a long-standing bug where it
+        // ignores SRC_W/SRC_H/SRC_X/SRC_Y on scanout, which breaks composition of SDR
+        // surfaces onto HDR outputs via this path; working around that is out of scope
+        // here. Require the surface's color description to match the output.
+        if (output->is_hdr())
+        {
+            const auto& ct = self->current_state.color_transform;
+            if ((ct.transfer_function != WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ) ||
+                (ct.primaries != WLR_COLOR_NAMED_PRIMARIES_BT2020))
+            {
+                return direct_scanout::OCCLUSION;
+            }
+        }
+
+        wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_buffer(&state, self->current_state.current_buffer);
+        if (self->current_state.acquire_point)
+        {
+            wlr_output_state_set_wait_timeline(&state,
+                self->current_state.acquire_point.timeline, self->current_state.acquire_point.point);
+        }
+
+        auto release_point = output->render->next_explicit_sync_release_point();
+        if (release_point)
+        {
+            wlr_output_state_set_signal_timeline(
+                &state, release_point.timeline, release_point.point);
+        }
+
+        if (wlr_output_test_state(output->handle, &state))
+        {
+            // The helper listens for the output commit and must run before the
+            // commit which will present this surface.
+            wlr_presentation_surface_scanned_out_on_output(wlr_surf, output->handle);
+            if (wlr_output_commit_state(output->handle, &state))
+            {
+                wlr_output_state_finish(&state);
+                return direct_scanout::SUCCESS;
+            }
+        }
+
+        wlr_output_state_finish(&state);
+        return direct_scanout::OCCLUSION;
+    }
+
+    void compute_visibility(wf::output_t *output, wf::regionf_t& visible) override
+    {
+        auto our_box = self->get_bounding_box();
+        on_frame_done.disconnect();
+
+        // We store the last visibility to determine whether to push damage for hidden regions.
+        // Note that we store the visibility before clipping to our bounding box, because damage
+        // may be outside of it (e.g., if the surface resizes to a larger size and the visibility is not
+        // immediately recomputed due to optimizations).
+        last_visibility = visible;
+
+        static wf::option_wrapper_t<bool> use_opaque_optimizations{
+            "workarounds/enable_opaque_region_damage_optimizations"
+        };
+
+        if (!(visible & our_box).empty())
+        {
+            // We are visible on the given output => send wl_surface.frame on output frame, so that clients
+            // can draw the next frame.
+            output->connect(&on_frame_done);
+            if (use_opaque_optimizations)
+            {
+                visible ^= self->current_state.opaque_region;
+            }
+        }
+    }
+};
+
+void wf::scene::wlr_surface_node_t::gen_render_instances(
+    std::vector<render_instance_uptr>& instances, damage_callback damage,
+    wf::output_t *output)
+{
+    instances.push_back(std::make_unique<wlr_surface_render_instance_t>(
+        std::dynamic_pointer_cast<wlr_surface_node_t>(this->shared_from_this()), damage, output));
+}
+
+wf::geometry_t wf::scene::wlr_surface_node_t::get_render_geometry() const
+{
+    return wf::construct_box({0, 0}, size_on_primary_output);
+}
+
+wf::geometry_t wf::scene::wlr_surface_node_t::get_bounding_box()
+{
+    return wf::construct_box({0, 0}, current_state.size);
+}
+
+wlr_surface*wf::scene::wlr_surface_node_t::get_surface() const
+{
+    return this->surface;
+}
+
+std::shared_ptr<wf::texture_t> wf::scene::wlr_surface_node_t::to_texture(
+    wf::dimensionsf_t *out_logical_size) const
+{
+    if (this->current_state.current_buffer)
+    {
+        auto tex = wf::texture_t::from_buffer(current_state.current_buffer, current_state.texture);
+        tex->set_source_box(current_state.src_viewport);
+        tex->set_transform(current_state.transform);
+        tex->set_color_transform(current_state.color_transform);
+        tex->set_wait_timeline(current_state.acquire_point);
+        if (out_logical_size)
+        {
+            *out_logical_size = size_on_primary_output;
+        }
+
+        return tex;
+    }
+
+    return nullptr;
+}
+
+// Idea of handling output enter/leave events: when the event comes, we store the number of enters/leaves
+// for outputs and update them on the next idle. The idea is to cache together multiple events, which may
+// be triggered especially when visibility recomputation happens.
+void wf::scene::wlr_surface_node_t::handle_enter(wf::output_t *output)
+{
+    pending_visibility_delta[output]++;
+    idle_update_outputs.run_once([&] () { update_pending_outputs(); });
+}
+
+void wf::scene::wlr_surface_node_t::handle_leave(wf::output_t *output)
+{
+    pending_visibility_delta[output]--;
+    idle_update_outputs.run_once([&] () { update_pending_outputs(); });
+}
+
+void wf::scene::wlr_surface_node_t::update_pending_outputs()
+{
+    for (auto& [wo, delta] : pending_visibility_delta)
+    {
+        if (delta > 0)
+        {
+            visibility[wo] += delta;
+            if (surface)
+            {
+                wlr_surface_send_enter(surface, wo->handle);
+            }
+        } else if (delta < 0)
+        {
+            if (!visibility.count(wo))
+            {
+                // output was destroyed, ignore.
+                continue;
+            }
+
+            visibility[wo] += delta;
+            if ((visibility[wo] <= 0) && surface)
+            {
+                wlr_surface_send_leave(surface, wo->handle);
+            }
+
+            if (visibility[wo] <= 0)
+            {
+                visibility.erase(wo);
+            }
+        }
+    }
+
+    if (auto primary_output = guess_primary_output();primary_output && surface)
+    {
+        wlr_fractional_scale_v1_notify_scale(surface, primary_output->get_scale());
+        wlr_surface_set_preferred_buffer_scale(surface, primary_output->get_scale());
+        update_preferred_image_description();
+    }
+
+    pending_visibility_delta.clear();
+}
+
+wf::output_t*wf::scene::wlr_surface_node_t::guess_primary_output()
+{
+    if (visibility.empty())
+    {
+        return nullptr;
+    }
+
+    wf::output_t *primary = nullptr;
+    for (auto& [wo, _] : visibility)
+    {
+        if (!primary || (wo->handle->scale > primary->handle->scale))
+        {
+            primary = wo;
+        }
+    }
+
+    return primary;
+}
+
+void wf::scene::wlr_surface_node_t::update_preferred_image_description()
+{
+    if (!surface)
+    {
+        return;
+    }
+
+    auto cm = wf::get_core().protocols.color_manager_v1;
+    if (!cm)
+    {
+        return;
+    }
+
+    // Pick the "most capable" image description amongst the outputs we are visible on.
+    // HDR-capable outputs win over SDR ones so that clients are told they may use HDR if any
+    // of their outputs supports it.
+    const wlr_output_image_description *best = nullptr;
+    for (auto& [wo, _] : visibility)
+    {
+        const wlr_output_image_description *img = wo->handle->image_description;
+        if (!img)
+        {
+            continue;
+        }
+
+        if (!best ||
+            ((best->transfer_function != WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ) &&
+             (img->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ)))
+        {
+            best = img;
+        }
+    }
+
+    if (!best)
+    {
+        wlr_image_description_v1_data data{};
+        data.tf_named = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22;
+        data.primaries_named = WP_COLOR_MANAGER_V1_PRIMARIES_SRGB;
+        wlr_color_manager_v1_set_surface_preferred_image_description(cm, surface, &data);
+        return;
+    }
+
+    wlr_image_description_v1_data data{};
+    data.tf_named = wlr_color_manager_v1_transfer_function_from_wlr(best->transfer_function);
+    data.primaries_named = wlr_color_manager_v1_primaries_from_wlr(best->primaries);
+
+    wlr_color_manager_v1_set_surface_preferred_image_description(cm, surface, &data);
+}

@@ -1,0 +1,734 @@
+#include <limits>
+#include <memory>
+#include <wayfire/scene.hpp>
+#include <wayfire/view.hpp>
+#include <wayfire/output.hpp>
+#include <algorithm>
+
+#include "scene-priv.hpp"
+#include "wayfire/geometry.hpp"
+#include "wayfire/output-layout.hpp"
+#include "wayfire/region.hpp"
+#include "wayfire/scene-input.hpp"
+#include "wayfire/scene-render.hpp"
+#include "wayfire/scene-operations.hpp"
+#include "wayfire/signal-provider.hpp"
+#include <wayfire/core.hpp>
+
+namespace wf
+{
+bool keyboard_focus_node_t::operator <(const keyboard_focus_node_t& other) const
+{
+    if (this->importance == other.importance)
+    {
+        if (this->node && other.node)
+        {
+            auto ts_self  = node->keyboard_interaction().last_focus_timestamp;
+            auto ts_other = other.node->keyboard_interaction().last_focus_timestamp;
+            return ts_self < ts_other;
+        }
+
+        if (!this->node && !other.node)
+        {
+            return false;
+        }
+
+        // Prefer to focus with node
+        return !this->node;
+    }
+
+    return this->importance < other.importance;
+}
+
+namespace scene
+{
+// ---------------------------------- node_t -----------------------------------
+node_t::~node_t()
+{}
+
+node_t::node_t(bool is_structure)
+{
+    this->_is_structure = is_structure;
+}
+
+void node_t::set_enabled(bool is_active)
+{
+    enabled_counter += (is_active ? 1 : -1);
+}
+
+std::string node_t::stringify_flags() const
+{
+    std::string fl = "";
+    if (flags() & ((int)node_flags::DISABLED))
+    {
+        fl += "d";
+    }
+
+    if (flags() & ((int)node_flags::RAW_INPUT))
+    {
+        fl += "R";
+    }
+
+    return "(" + fl + ")";
+}
+
+std::optional<input_node_t> node_t::find_node_at(const wf::pointf_t& at)
+{
+    auto local = this->to_local(at);
+    for (auto& node : get_children())
+    {
+        if (!node->is_enabled())
+        {
+            continue;
+        }
+
+        auto child_node = node->find_node_at(local);
+        if (child_node.has_value())
+        {
+            return child_node;
+        }
+    }
+
+    return {};
+}
+
+wf::keyboard_focus_node_t node_t::keyboard_refocus(wf::output_t *output)
+{
+    wf::keyboard_focus_node_t result;
+
+    for (auto& ch : this->get_children())
+    {
+        if (!ch->is_enabled())
+        {
+            continue;
+        }
+
+        auto ch_focus = ch->keyboard_refocus(output);
+        result = std::max(result, ch_focus);
+
+        if (!ch_focus.allow_focus_below)
+        {
+            result.allow_focus_below = false;
+            break;
+        }
+    }
+
+    return result;
+}
+
+bool floating_inner_node_t::set_children_list(std::vector<node_ptr> new_list)
+{
+    set_children_unchecked(std::move(new_list));
+    return true;
+}
+
+void node_t::set_children_unchecked(std::vector<node_ptr> new_list)
+{
+    node_damage_signal data;
+    data.region |= get_bounding_box();
+
+    for (auto& node : this->children)
+    {
+        node->_parent = nullptr;
+    }
+
+    for (auto& node : new_list)
+    {
+        wf::dassert(node->parent() == nullptr, "Adding a child node twice!");
+        node->_parent = this;
+    }
+
+    this->children = std::move(new_list);
+
+    data.region |= get_bounding_box();
+    this->emit(&data);
+}
+
+static int get_layer_index(const wf::scene::node_t *node)
+{
+    using namespace wf::scene;
+    if (auto root = dynamic_cast<root_node_t*>(node->parent()))
+    {
+        for (int layer = 0; layer < (int)layer::ALL_LAYERS; layer++)
+        {
+            if (root->layers[layer].get() == node)
+            {
+                return layer;
+            }
+        }
+    }
+
+    return -1;
+}
+
+std::string node_t::stringify() const
+{
+    std::string description = "node ";
+    int layer_idx = get_layer_index(this);
+
+    if (layer_idx >= 0)
+    {
+        static constexpr const char *layer_names[] = {
+            "background",
+            "bottom",
+            "workspace",
+            "top",
+            "unmanaged",
+            "overlay",
+            "lock",
+            "dwidget"
+        };
+
+        static_assert((sizeof(layer_names) / sizeof(layer_names[0])) ==
+            (size_t)layer::ALL_LAYERS);
+        description  = "layer_";
+        description += layer_names[layer_idx];
+    }
+
+    return description + " " + stringify_flags();
+}
+
+wf::pointf_t node_t::to_local(const wf::pointf_t& point)
+{
+    return point;
+}
+
+wf::pointf_t node_t::to_global(const wf::pointf_t& point)
+{
+    return point;
+}
+
+// Just listen for damage from the node and push it upwards
+class default_render_instance_t : public render_instance_t
+{
+  protected:
+    damage_callback push_damage;
+
+    wf::signal::connection_t<node_damage_signal> on_main_node_damaged =
+        [=] (node_damage_signal *data)
+    {
+        push_damage(data->region);
+    };
+
+  public:
+    default_render_instance_t(node_t *self, damage_callback callback)
+    {
+        this->push_damage = callback;
+        self->connect(&on_main_node_damaged);
+    }
+
+    void schedule_instructions(std::vector<render_instruction_t>& instructions,
+        const wf::render_target_t& target, wf::regionf_t& damage) override
+    {
+        // nothing to render here
+    }
+
+    void render(const wf::scene::render_instruction_t& data) override
+    {
+        wf::dassert(false, "Rendering an inner node?");
+    }
+
+    direct_scanout try_scanout(wf::output_t *output) override
+    {
+        // Nodes without actual visual content do not prevent further nodes
+        // from being scanned out.
+        return direct_scanout::SKIP;
+    }
+};
+
+void node_t::gen_render_instances(std::vector<render_instance_uptr> & instances,
+    damage_callback push_damage, wf::output_t *output)
+{
+    // Add self for damage tracking
+    instances.push_back(
+        std::make_unique<default_render_instance_t>(this, push_damage));
+
+    // Add children as a flat list to avoid multiple indirections
+    for (auto& ch : this->children)
+    {
+        if (ch->is_enabled())
+        {
+            ch->gen_render_instances(instances, push_damage, output);
+        }
+    }
+}
+
+wf::geometry_t node_t::get_children_bounding_box() const
+{
+    if (children.empty())
+    {
+        return {0, 0, 0, 0};
+    }
+
+    double min_x = std::numeric_limits<double>::max();
+    double min_y = std::numeric_limits<double>::max();
+    double max_x = std::numeric_limits<double>::lowest();
+    double max_y = std::numeric_limits<double>::lowest();
+
+    for (auto& ch : children)
+    {
+        auto bbox = ch->get_bounding_box();
+
+        min_x = std::min(min_x, bbox.x);
+        min_y = std::min(min_y, bbox.y);
+        max_x = std::max(max_x, bbox.x + bbox.width);
+        max_y = std::max(max_y, bbox.y + bbox.height);
+    }
+
+    return {min_x, min_y, max_x - min_x, max_y - min_y};
+}
+
+wf::geometry_t node_t::get_bounding_box()
+{
+    return get_children_bounding_box();
+}
+
+uint32_t node_t::optimize_update(uint32_t flags)
+{
+    if (!this->is_enabled())
+    {
+        return flags | update_flag::MASKED;
+    }
+
+    return flags;
+}
+
+// ------------------------------ output_node_t --------------------------------
+
+struct output_node_t::priv_t
+{
+    wf::output_t *output;
+    bool auto_limits = true;
+    wf::signal::connection_t<wf::output_configuration_changed_signal> on_changed;
+    wf::signal::connection_t<wf::output_removed_signal> on_removed;
+    wf::option_wrapper_t<bool> remove_output_limits{"workarounds/remove_output_limits"};
+
+    void update_limits(std::optional<wf::geometry_t>& limit_region)
+    {
+        if (!auto_limits || !output)
+        {
+            // Plugins will set this manually
+            return;
+        }
+
+        if (remove_output_limits)
+        {
+            limit_region = std::nullopt;
+        } else
+        {
+            limit_region = output->get_layout_geometry();
+        }
+    }
+};
+
+output_node_t::output_node_t(wf::output_t *output, bool auto_limits) : floating_inner_node_t(true)
+{
+    this->priv = std::make_unique<priv_t>();
+    this->priv->auto_limits = auto_limits;
+    this->priv->output     = output;
+    this->priv->on_changed = [=] (wf::output_configuration_changed_signal *data)
+    {
+        this->priv->update_limits(this->limit_region);
+        wf::scene::update(shared_from_this(), scene::update_flag::INPUT_STATE);
+    };
+
+    this->priv->on_removed = [=] (wf::output_removed_signal *data)
+    {
+        this->priv->output = nullptr;
+    };
+    output->connect(&this->priv->on_removed);
+
+    this->priv->remove_output_limits.set_callback([=] ()
+    {
+        this->priv->update_limits(this->limit_region);
+    });
+
+    this->priv->update_limits(this->limit_region);
+    output->connect(&priv->on_changed);
+}
+
+output_node_t::~output_node_t()
+{}
+
+std::string output_node_t::stringify() const
+{
+    if (!this->priv->output)
+    {
+        return "output (removed) " + stringify_flags();
+    } else
+    {
+        return "output " + this->priv->output->to_string() + " " + stringify_flags();
+    }
+}
+
+wf::pointf_t output_node_t::to_local(const wf::pointf_t& point)
+{
+    if (this->priv->output)
+    {
+        auto offset = wf::origin(priv->output->get_layout_geometry());
+        return {point.x - offset.x, point.y - offset.y};
+    } else
+    {
+        return point;
+    }
+}
+
+wf::pointf_t output_node_t::to_global(const wf::pointf_t& point)
+{
+    if (this->priv->output)
+    {
+        auto offset = wf::origin(priv->output->get_layout_geometry());
+        return {point.x + offset.x, point.y + offset.y};
+    } else
+    {
+        return point;
+    }
+}
+
+std::optional<input_node_t> output_node_t::find_node_at(const wf::pointf_t& at)
+{
+    if (limit_region && !(*limit_region & at))
+    {
+        return {};
+    }
+
+    return node_t::find_node_at(at);
+}
+
+class output_render_instance_t : public default_render_instance_t
+{
+    output_node_t *self;
+    std::vector<render_instance_uptr> children;
+
+  public:
+    output_render_instance_t(output_node_t *self, damage_callback callback,
+        wf::output_t *output, wf::output_t *shown_on) :
+        default_render_instance_t(self, transform_damage(callback))
+    {
+        this->self = self;
+
+        // Children are stored as a sublist, because we need to translate every
+        // time between global and output-local geometry.
+        for (auto& child : self->get_children())
+        {
+            if (child->is_enabled())
+            {
+                child->gen_render_instances(children,
+                    transform_damage(callback), shown_on);
+            }
+        }
+    }
+
+    damage_callback transform_damage(damage_callback child_damage)
+    {
+        return [=] (const wf::regionf_t& damage)
+        {
+            if (self->get_output())
+            {
+                child_damage(damage + wf::origin(self->get_output()->get_layout_geometry()));
+            } else
+            {
+                child_damage(damage);
+            }
+        };
+    }
+
+    void schedule_instructions(std::vector<render_instruction_t>& instructions,
+        const wf::render_target_t& target, wf::regionf_t& damage) override
+    {
+        if (!self->get_output())
+        {
+            return;
+        }
+
+        if (self->limit_region)
+        {
+            wf::regionf_t our_damage = damage & *self->limit_region;
+            our_damage &= target.geometry;
+            if (!our_damage.empty())
+            {
+                _schedule_instructions(instructions, target, our_damage);
+                // Inside limit region, damage is defined as the children
+                // decided.
+                damage ^= *self->limit_region;
+                damage |= our_damage & *self->limit_region;
+            }
+        } else
+        {
+            _schedule_instructions(instructions, target, damage);
+        }
+    }
+
+    void _schedule_instructions(std::vector<render_instruction_t>& instructions,
+        const wf::render_target_t& target, wf::regionf_t& damage)
+    {
+        // In principle, we just have to schedule the children.
+        // However, we need to adjust the target's geometry and the damage to
+        // fit with the coordinate system of the output.
+        auto offset = wf::origin(this->self->get_output()->get_layout_geometry());
+        wf::render_target_t new_target = target.translated(-offset);
+
+        damage += -offset;
+        for (auto& ch : children)
+        {
+            ch->schedule_instructions(instructions, new_target, damage);
+        }
+
+        damage += offset;
+    }
+
+    direct_scanout try_scanout(wf::output_t *scanout) override
+    {
+        if ((scanout != this->self->get_output()) && this->self->limit_region)
+        {
+            // Can't scanout on a different output because it is outside
+            // of the limit region
+            return direct_scanout::SKIP;
+        }
+
+        for (auto& ch : children)
+        {
+            auto res = ch->try_scanout(scanout);
+            if (res != direct_scanout::SKIP)
+            {
+                return res;
+            }
+        }
+
+        return direct_scanout::SKIP;
+    }
+
+    void compute_visibility(wf::output_t *output, wf::regionf_t& visible) override
+    {
+        auto offset = wf::origin(output->get_layout_geometry());
+        compute_visibility_from_list(children, output, visible, offset);
+    }
+};
+
+void output_node_t::gen_render_instances(
+    std::vector<render_instance_uptr> & instances, damage_callback push_damage,
+    wf::output_t *shown_on)
+{
+    if (!priv->output)
+    {
+        return;
+    }
+
+    if (this->limit_region && shown_on && (shown_on != this->priv->output))
+    {
+        // If the limit region is set and we are limiting the generation of
+        // instances to a particular region (typically an output), make sure we
+        // generate instances only if the output will be visible.
+        return;
+    }
+
+    instances.push_back(
+        std::make_unique<output_render_instance_t>(this, push_damage, priv->output,
+            shown_on));
+}
+
+wf::geometry_t output_node_t::get_bounding_box()
+{
+    if (!priv->output)
+    {
+        return node_t::get_bounding_box();
+    }
+
+    const auto bbox = node_t::get_bounding_box();
+    return bbox + wf::origin(priv->output->get_layout_geometry());
+}
+
+wf::output_t*output_node_t::get_output() const
+{
+    return priv->output;
+}
+
+// ------------------------------ root_node_t ----------------------------------
+root_node_t::root_node_t() : floating_inner_node_t(true)
+{
+    std::vector<node_ptr> children;
+
+    this->priv = std::make_unique<root_node_t::priv_t>();
+    for (int i = (int)layer::ALL_LAYERS - 1; i >= 0; i--)
+    {
+        layers[i] = std::make_shared<floating_inner_node_t>(true);
+        children.push_back(layers[i]);
+    }
+
+    set_children_unchecked(children);
+}
+
+root_node_t::~root_node_t()
+{}
+
+std::string root_node_t::stringify() const
+{
+    return "root " + stringify_flags();
+}
+
+// ---------------------- generic scenegraph functions -------------------------
+void set_node_enabled(wf::scene::node_ptr node, bool enabled)
+{
+    bool was_enabled = node->is_enabled();
+    node->set_enabled(enabled);
+    if (was_enabled != node->is_enabled())
+    {
+        if (node->parent())
+        {
+            node_damage_signal ev;
+            ev.region = node->get_bounding_box();
+            node->parent()->emit(&ev);
+        }
+
+        update(node, update_flag::ENABLED);
+    }
+}
+
+void update(node_ptr changed_node, uint32_t flags)
+{
+    if ((flags & update_flag::CHILDREN_LIST) ||
+        (flags & update_flag::ENABLED) ||
+        (flags & update_flag::GEOMETRY))
+    {
+        flags |= update_flag::INPUT_STATE;
+    }
+
+    if (!changed_node->is_enabled() &&
+        !(flags & update_flag::ENABLED))
+    {
+        flags |= update_flag::MASKED;
+    }
+
+    node_update_signal data;
+    data.node  = changed_node.get();
+    data.flags = flags;
+    changed_node->emit(&data);
+
+    if (changed_node == wf::get_core().scene())
+    {
+        root_node_update_signal data;
+        data.flags = flags;
+        wf::get_core().scene()->emit(&data);
+        return;
+    }
+
+    if (changed_node->parent())
+    {
+        flags = changed_node->parent()->optimize_update(flags);
+        if (!changed_node->parent()->is_enabled())
+        {
+            flags |= update_flag::MASKED;
+        }
+
+        update(changed_node->parent()->shared_from_this(), flags);
+    }
+}
+
+floating_inner_node_t::~floating_inner_node_t()
+{
+    for (auto& node : this->children)
+    {
+        node->_parent = nullptr;
+    }
+}
+
+uint32_t optimize_nested_render_instances(wf::scene::node_ptr node, uint32_t flags)
+{
+    if (flags & (update_flag::CHILDREN_LIST | update_flag::ENABLED))
+    {
+        // If we update the list of children, there is no need to notify the whole scenegraph.
+        // Instead, we can do a local update, and only update visibility.
+        flags &= ~update_flag::CHILDREN_LIST;
+        flags &= ~update_flag::ENABLED;
+        flags |= update_flag::GEOMETRY | update_flag::INPUT_STATE;
+        node_regen_instances_signal data;
+        node->emit(&data);
+    }
+
+    return flags;
+}
+
+render_instance_manager_t::render_instance_manager_t(std::vector<node_ptr> nodes, damage_callback on_damage,
+    wf::output_t *reference_output) : nodes(nodes), on_damage(on_damage), reference_output(reference_output)
+{
+    regen_instances();
+    this->on_update = [=] (node_update_signal *ev)
+    {
+        if (ev->flags & scene::update_flag::MASKED)
+        {
+            // Update is masked, but the starting node is updated. So it is about a disabled child node, which
+            // we can ignore. On the other hand, if the starting node is disabled, all updates will be masked.
+            // However in some cases (move-drag-interface, for example), or when rendering minimized views or
+            // similar, the starting nodes are disabled, but we still want to render them.
+            if (ev->node->is_enabled())
+            {
+                return;
+            }
+        }
+
+        constexpr uint32_t recompute_instances_on = scene::update_flag::CHILDREN_LIST |
+            scene::update_flag::ENABLED;
+        constexpr uint32_t recompute_visibility_on = recompute_instances_on | scene::update_flag::GEOMETRY;
+
+        const auto& output_name = [&] { return reference_output ? reference_output->to_string() : "none"; };
+        const auto& is_root     = [&] { return nodes.size() > 0 && nodes[0] == wf::get_core().scene(); };
+
+        if (ev->flags & recompute_instances_on)
+        {
+            LOGC(RENDER, this, ": Output ", output_name(), ": regenerating instances from ", nodes.size(),
+                " nodes (root=", is_root() ? "true" : "false", ").");
+            regen_instances();
+        }
+
+        if (ev->flags & recompute_visibility_on)
+        {
+            idle_visibility.run_once([=] ()
+            {
+                LOGC(RENDER, this, ": Output ", output_name(), ": recomputing visibility from ", nodes.size(),
+                    " nodes (root=", is_root() ? "true" : "false", ").");
+                update_visibility();
+            });
+        }
+    };
+
+    for (auto& node : nodes)
+    {
+        node->connect(&on_update);
+    }
+}
+
+void render_instance_manager_t::regen_instances()
+{
+    instances.clear();
+    for (auto& node : nodes)
+    {
+        node->gen_render_instances(instances, on_damage, reference_output);
+    }
+}
+
+void render_instance_manager_t::set_visibility_region(wf::regionf_t region)
+{
+    this->visibility_region = region;
+    update_visibility();
+}
+
+void render_instance_manager_t::update_visibility()
+{
+    if (!reference_output || !visibility_region.has_value())
+    {
+        return;
+    }
+
+    wf::regionf_t visibility = this->visibility_region.value();
+    for (auto& instance : instances)
+    {
+        instance->compute_visibility(reference_output, visibility);
+    }
+}
+
+std::vector<render_instance_uptr>& render_instance_manager_t::get_instances()
+{
+    return this->instances;
+}
+} // namespace scene
+}

@@ -1,0 +1,1103 @@
+#include <wayfire/render.hpp>
+#include "core/core-impl.hpp"
+#include "wayfire/dassert.hpp"
+#include "wayfire/nonstd/reverse.hpp"
+#include "wayfire/opengl.hpp"
+#include <wayfire/scene-render.hpp>
+#include <cmath>
+#include <drm_fourcc.h>
+
+/**
+ * SDR reference white luminance in cd/m², used when bridging between [0,1]-relative SDR linear
+ * values and the absolute PQ luminance range. Matches BT.2408 ("graphics white") and the default
+ * used by KDE/GNOME for SDR-on-HDR compositing.
+ */
+constexpr float SDR_REFERENCE_WHITE_NITS = 203.0f;
+constexpr float PQ_MAX_NITS = 10000.0f;
+
+wf::explicit_sync_point_t::explicit_sync_point_t(
+    wlr_drm_syncobj_timeline *timeline, uint64_t point) :
+    timeline(timeline ? wlr_drm_syncobj_timeline_ref(timeline) : nullptr), point(point)
+{}
+
+wf::explicit_sync_point_t::explicit_sync_point_t(const explicit_sync_point_t& other) :
+    explicit_sync_point_t(other.timeline, other.point)
+{}
+
+wf::explicit_sync_point_t::explicit_sync_point_t(explicit_sync_point_t&& other)
+{
+    *this = std::move(other);
+}
+
+wf::explicit_sync_point_t& wf::explicit_sync_point_t::operator =(const explicit_sync_point_t& other)
+{
+    if (this != &other)
+    {
+        explicit_sync_point_t copy{other};
+        *this = std::move(copy);
+    }
+
+    return *this;
+}
+
+wf::explicit_sync_point_t& wf::explicit_sync_point_t::operator =(explicit_sync_point_t&& other)
+{
+    if (this != &other)
+    {
+        wlr_drm_syncobj_timeline_unref(timeline);
+        timeline = other.timeline;
+        point    = other.point;
+        other.timeline = nullptr;
+        other.point    = 0;
+    }
+
+    return *this;
+}
+
+wf::explicit_sync_point_t::~explicit_sync_point_t()
+{
+    wlr_drm_syncobj_timeline_unref(timeline);
+}
+
+static bool is_hdr_transfer_function(wlr_color_transfer_function tf)
+{
+    return tf == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ;
+}
+
+float wf::compute_luminance_multiplier(wlr_color_transfer_function source_tf,
+    wlr_color_transfer_function target_tf)
+{
+    const bool source_pq = is_hdr_transfer_function(source_tf);
+    const bool target_pq = is_hdr_transfer_function(target_tf);
+
+    if (source_pq == target_pq)
+    {
+        return 1.0f;
+    }
+
+    if (target_pq)
+    {
+        // SDR source → HDR target: scale [0,1] relative down so 1.0 maps to the SDR
+        // reference white in the PQ-relative range.
+        return SDR_REFERENCE_WHITE_NITS / PQ_MAX_NITS;
+    }
+
+    // HDR source → SDR target: scale up so the SDR reference luminance maps to 1.0.
+    return PQ_MAX_NITS / SDR_REFERENCE_WHITE_NITS;
+}
+
+static float gamma22_to_linear(float c)
+{
+    return powf(std::max(c, 0.0f), 2.2f);
+}
+
+static float linear_to_gamma22(float c)
+{
+    return powf(std::max(c, 0.0f), (1.0f / 2.2f));
+}
+
+static wlr_render_color color_to_render_color(const wf::color_t& color,
+    wlr_color_transfer_function target_tf)
+{
+    if (!is_hdr_transfer_function(target_tf))
+    {
+        return wlr_render_color{
+            .r = static_cast<float>(color.r),
+            .g = static_cast<float>(color.g),
+            .b = static_cast<float>(color.b),
+            .a = static_cast<float>(color.a)
+        };
+    }
+
+    const float scale = SDR_REFERENCE_WHITE_NITS / PQ_MAX_NITS;
+    const float alpha = static_cast<float>(color.a);
+    return wlr_render_color{
+        .r = linear_to_gamma22(gamma22_to_linear(static_cast<float>(color.r) / alpha) * scale) * alpha,
+        .g = linear_to_gamma22(gamma22_to_linear(static_cast<float>(color.g) / alpha) * scale) * alpha,
+        .b = linear_to_gamma22(gamma22_to_linear(static_cast<float>(color.b) / alpha) * scale) * alpha,
+        .a = alpha,
+    };
+}
+
+bool wf::color_transform_t::operator ==(const color_transform_t& other) const
+{
+    return transfer_function == other.transfer_function &&
+           primaries == other.primaries &&
+           color_encoding == other.color_encoding &&
+           color_range == other.color_range &&
+           alpha_mode == other.alpha_mode &&
+           chroma_location == other.chroma_location;
+}
+
+bool wf::color_transform_t::operator !=(const color_transform_t& other) const
+{
+    return !(*this == other);
+}
+
+wf::texture_t::texture_t() = default;
+
+wf::texture_t::~texture_t()
+{
+    if (buffer)
+    {
+        wlr_buffer_unlock(buffer);
+    } else if (texture)
+    {
+        wlr_texture_destroy(texture);
+    }
+}
+
+std::optional<wlr_fbox> wf::texture_t::get_source_box() const
+{
+    return source_box;
+}
+
+void wf::texture_t::set_source_box(const std::optional<wlr_fbox>& box)
+{
+    source_box = box;
+}
+
+wl_output_transform wf::texture_t::get_transform() const
+{
+    return transform;
+}
+
+void wf::texture_t::set_transform(wl_output_transform t)
+{
+    transform = t;
+}
+
+std::optional<wlr_scale_filter_mode> wf::texture_t::get_filter_mode() const
+{
+    return filter_mode;
+}
+
+void wf::texture_t::set_filter_mode(const std::optional<wlr_scale_filter_mode>& mode)
+{
+    filter_mode = mode;
+}
+
+wf::color_transform_t wf::texture_t::get_color_transform() const
+{
+    return color_transform;
+}
+
+void wf::texture_t::set_color_transform(const wf::color_transform_t& ct)
+{
+    color_transform = ct;
+}
+
+const wf::explicit_sync_point_t& wf::texture_t::get_wait_timeline() const
+{
+    return wait_point;
+}
+
+void wf::texture_t::set_wait_timeline(const explicit_sync_point_t& point)
+{
+    wait_point = point;
+}
+
+std::shared_ptr<wf::texture_t> wf::texture_t::from_buffer(wlr_buffer *buffer, wlr_texture *texture)
+{
+    auto tex = std::shared_ptr<texture_t>(new texture_t());
+    tex->buffer  = buffer;
+    tex->texture = texture;
+    if (buffer)
+    {
+        wlr_buffer_lock(buffer);
+    }
+
+    return tex;
+}
+
+std::shared_ptr<wf::texture_t> wf::texture_t::from_texture(wlr_texture *texture)
+{
+    auto tex = std::shared_ptr<texture_t>(new texture_t());
+    tex->buffer  = nullptr;
+    tex->texture = texture;
+    return tex;
+}
+
+std::shared_ptr<wf::texture_t> wf::texture_t::from_aux(auxilliary_buffer_t& buffer)
+{
+    auto tex = from_buffer(buffer.get_buffer(), buffer.get_texture());
+
+    // We keep aux buffers in linear color space.
+    auto transform = tex->get_color_transform();
+    transform.transfer_function = WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR;
+    tex->set_color_transform(transform);
+    return tex;
+}
+
+wlr_texture*wf::texture_t::get_wlr_texture() const
+{
+    return texture;
+}
+
+int32_t wf::texture_t::get_width() const
+{
+    return texture->width;
+}
+
+int32_t wf::texture_t::get_height() const
+{
+    return texture->height;
+}
+
+wf::render_buffer_t::render_buffer_t(wlr_buffer *buffer, wf::dimensions_t size)
+{
+    this->buffer = buffer;
+    this->size   = size;
+}
+
+wf::auxilliary_buffer_t::auxilliary_buffer_t(auxilliary_buffer_t&& other)
+{
+    *this = std::move(other);
+}
+
+wf::auxilliary_buffer_t& wf::auxilliary_buffer_t::operator =(auxilliary_buffer_t&& other)
+{
+    if (&other == this)
+    {
+        return *this;
+    }
+
+    this->texture = std::exchange(other.texture, nullptr);
+    this->buffer  = std::exchange(other.buffer, {});
+    return *this;
+}
+
+wf::auxilliary_buffer_t::~auxilliary_buffer_t()
+{
+    free();
+}
+
+static const wlr_drm_format *choose_format_from_set(const wlr_drm_format_set *set,
+    wf::buffer_allocation_hints_t hints)
+{
+    // Half-float formats: preferred when storing extended-range linear values
+    // (HDR scene intermediate). RGBA16F has alpha; we use it for both alpha and
+    // no-alpha cases since we need the precision regardless.
+    static std::vector<uint32_t> hdr_linear_formats = {
+        DRM_FORMAT_ABGR16161616F,
+        DRM_FORMAT_XBGR16161616F,
+        // 16-bit fixed-point fallback. Sufficient range for SDR-relative linear
+        // values up to ~49.26 (HDR peak in our domain).
+        DRM_FORMAT_ABGR16161616,
+        DRM_FORMAT_XBGR16161616,
+    };
+
+    static std::vector<uint32_t> alpha_formats = {
+        DRM_FORMAT_ARGB8888,
+        DRM_FORMAT_ABGR8888,
+        DRM_FORMAT_RGBA8888,
+        DRM_FORMAT_BGRA8888,
+    };
+
+    static std::vector<uint32_t> no_alpha_formats = {
+        DRM_FORMAT_XRGB8888,
+        DRM_FORMAT_XBGR8888,
+        DRM_FORMAT_RGBX8888,
+        DRM_FORMAT_BGRX8888,
+    };
+
+    if (hints.hdr_linear)
+    {
+        for (auto drm_format : hdr_linear_formats)
+        {
+            if (auto layout = wlr_drm_format_set_get(set, drm_format))
+            {
+                return layout;
+            }
+        }
+
+        // Fall through to 8-bit if no high-precision format is available.
+    }
+
+    const auto& possible_formats = hints.needs_alpha ? alpha_formats : no_alpha_formats;
+    for (auto drm_format : possible_formats)
+    {
+        if (auto layout = wlr_drm_format_set_get(set, drm_format))
+        {
+            return layout;
+        }
+    }
+
+    return nullptr;
+}
+
+/**
+ * Account for small errors introduced while projecting geometry through
+ * wlr_fbox without changing the global containing_box() contract.
+ */
+static constexpr double framebuffer_rounding_epsilon = 1e-2;
+
+static int floor_framebuffer_coordinate(double value)
+{
+    return std::floor(value + framebuffer_rounding_epsilon);
+}
+
+static int ceil_framebuffer_coordinate(double value)
+{
+    return std::ceil(value - framebuffer_rounding_epsilon);
+}
+
+static wlr_box containing_framebuffer_box(const wf::geometry_t& box)
+{
+    int x1 = floor_framebuffer_coordinate(box.x);
+    int y1 = floor_framebuffer_coordinate(box.y);
+    int x2 = ceil_framebuffer_coordinate(box.x + box.width);
+    int y2 = ceil_framebuffer_coordinate(box.y + box.height);
+    return {x1, y1, x2 - x1, y2 - y1};
+}
+
+/**
+ * Rasterize a projected destination box for texture rendering.
+ *
+ * wlroots render passes only accept integer destination boxes. For exact
+ * integer-sized projected content rendered at a fractional origin, using a
+ * containing box expands the destination by one extra pixel and forces
+ * resampling. Snap the origin down to the framebuffer grid, but preserve an
+ * exact integer projected size when we have one.
+ */
+static wlr_box round_fbox_to_texture_dst_box(wf::geometry_t fbox)
+{
+    static constexpr double size_epsilon = 1e-6;
+    const int x = floor_framebuffer_coordinate(fbox.x);
+    const int y = floor_framebuffer_coordinate(fbox.y);
+    const double rounded_width  = std::round(fbox.width);
+    const double rounded_height = std::round(fbox.height);
+    const int x2 = (int)((std::abs(fbox.width - rounded_width) < size_epsilon) ?
+        (x + rounded_width) : ceil_framebuffer_coordinate(fbox.x + fbox.width));
+    const int y2 = (int)((std::abs(fbox.height - rounded_height) < size_epsilon) ?
+        (y + rounded_height) : ceil_framebuffer_coordinate(fbox.y + fbox.height));
+
+    return wlr_box{
+        .x     = x,
+        .y     = y,
+        .width = x2 - x,
+        .height = y2 - y,
+    };
+}
+
+static const wlr_drm_format *choose_format(wlr_renderer *renderer, wf::buffer_allocation_hints_t hints)
+{
+    auto supported_render_formats =
+        wlr_renderer_get_texture_formats(wf::get_core().renderer, renderer->render_buffer_caps);
+
+    // FIXME: in the wlroots vulkan renderer, we need to have SRGB writing support for optimal performance.
+    // The issue is that not all modifiers support SRGB. Until the wlroots issue
+    // (https://gitlab.freedesktop.org/wlroots/wlroots/-/issues/3986) is fixed, we need to somehow filter out
+    // formats that don't support SRGB. Simplest way is to patch wlroots as indicated in the issue.
+    if (renderer->WLR_PRIVATE.impl->get_render_formats)
+    {
+        static bool initialized = false;
+        static wlr_drm_format_set performant_formats{};
+        if (!initialized)
+        {
+            auto render_fmts = renderer->WLR_PRIVATE.impl->get_render_formats(renderer);
+            wlr_drm_format_set_intersect(&performant_formats, supported_render_formats, render_fmts);
+        }
+
+        if (auto format = choose_format_from_set(&performant_formats, hints))
+        {
+            return format;
+        }
+    }
+
+    return choose_format_from_set(supported_render_formats, hints);
+}
+
+static wf::dimensions_t sanitize_buffer_size(wf::dimensions_t size, float max_allowed_size)
+{
+    if ((size.width > max_allowed_size) || (size.height > max_allowed_size))
+    {
+        LOGW("Attempting to allocate a buffer which is too large ", size, "!");
+        float scale = std::min(max_allowed_size / size.width, max_allowed_size / size.height);
+        size.width  = std::ceil(size.width * scale);
+        size.height = std::ceil(size.height * scale);
+    }
+
+    return size;
+}
+
+wf::buffer_reallocation_result_t wf::auxilliary_buffer_t::allocate(wf::dimensions_t size, float scale,
+    buffer_allocation_hints_t hints)
+{
+    // From 16k x 16k upwards, we very often hit various limits so there is no point in allocating larger
+    // buffers. Plus, we never really need buffers that big in practice, so these usually indicate bugs in
+    // the code.
+    static wf::option_wrapper_t<int> max_buffer_size{"workarounds/max_buffer_size"};
+    const int FALLBACK_MAX_BUFFER_SIZE = 4096;
+    size.width  = std::max(1, (int)std::ceil(size.width * scale));
+    size.height = std::max(1, (int)std::ceil(size.height * scale));
+    size = sanitize_buffer_size(size, max_buffer_size);
+
+    if (buffer.get_size() == size)
+    {
+        return buffer_reallocation_result_t::SAME;
+    }
+
+    free();
+
+    auto renderer = wf::get_core().renderer;
+    auto format   = choose_format(renderer, hints);
+    if (!format)
+    {
+        LOGE("Failed to find supported render format!");
+        return buffer_reallocation_result_t::FAILED;
+    }
+
+    buffer.buffer = wlr_allocator_create_buffer(wf::get_core_impl().allocator, size.width,
+        size.height, format);
+
+    if (!buffer.buffer)
+    {
+        // On some systems, we may not be able to allocate very big buffers, so try to allocate a smaller
+        // size instead.
+        size = sanitize_buffer_size(size, FALLBACK_MAX_BUFFER_SIZE);
+        buffer.buffer = wlr_allocator_create_buffer(wf::get_core_impl().allocator, size.width,
+            size.height, format);
+    }
+
+    if (!buffer.buffer)
+    {
+        LOGE("Failed to allocate auxilliary buffer! Size ", size, " format ", format->format);
+        return buffer_reallocation_result_t::FAILED;
+    }
+
+    buffer.size = size;
+    return buffer_reallocation_result_t::REALLOCATED;
+}
+
+void wf::auxilliary_buffer_t::free()
+{
+    if (texture)
+    {
+        wlr_texture_destroy(texture);
+    }
+
+    texture = NULL;
+
+    if (buffer.get_buffer())
+    {
+        wlr_buffer_drop(buffer.get_buffer());
+    }
+
+    buffer.buffer = NULL;
+    buffer.size   = {0, 0};
+}
+
+wlr_buffer*wf::auxilliary_buffer_t::get_buffer() const
+{
+    return buffer.get_buffer();
+}
+
+wf::dimensions_t wf::auxilliary_buffer_t::get_size() const
+{
+    return buffer.get_size();
+}
+
+wlr_texture*wf::auxilliary_buffer_t::get_texture()
+{
+    if (!buffer.get_buffer())
+    {
+        return nullptr;
+    }
+
+    if (!texture)
+    {
+        texture = wlr_texture_from_buffer(wf::get_core().renderer, buffer.get_buffer());
+    }
+
+    return texture;
+}
+
+wf::render_buffer_t wf::auxilliary_buffer_t::get_renderbuffer() const
+{
+    return buffer;
+}
+
+void wf::render_buffer_t::do_blit(wlr_texture *src_wlr_tex, wf::geometry_t src_box,
+    wf::geometry_t dst_box, wlr_scale_filter_mode filter_mode) const
+{
+    auto renderer = wf::get_core().renderer;
+    auto target_buffer = this->get_buffer();
+
+    if (!target_buffer)
+    {
+        LOGE("Cannot copy to unallocated render buffer!");
+        return;
+    }
+
+    wlr_render_pass *pass = wlr_renderer_begin_buffer_pass(renderer, target_buffer, NULL);
+    if (!pass)
+    {
+        LOGE("Failed to start wlr render pass for render buffer copy!");
+        return;
+    }
+
+    wlr_render_texture_options opts{};
+    opts.texture = src_wlr_tex;
+    opts.alpha   = NULL;
+    opts.blend_mode  = WLR_RENDER_BLEND_MODE_NONE;
+    opts.filter_mode = filter_mode;
+    opts.transform   = WL_OUTPUT_TRANSFORM_NORMAL;
+    opts.clip    = NULL;
+    opts.src_box = {
+        .x     = (float)src_box.x,
+        .y     = (float)src_box.y,
+        .width = (float)src_box.width,
+        .height = (float)src_box.height,
+    };
+    opts.dst_box = wf::to_integer_box(dst_box);
+    wlr_render_pass_add_texture(pass, &opts);
+    if (!wlr_render_pass_submit(pass))
+    {
+        LOGE("Blit to render buffer failed!");
+    }
+}
+
+void wf::render_buffer_t::blit(wf::auxilliary_buffer_t& source, wf::geometry_t src_box,
+    wf::geometry_t dst_box, wlr_scale_filter_mode filter_mode) const
+{
+    if (wlr_texture *src_wlr_tex = source.get_texture())
+    {
+        do_blit(src_wlr_tex, src_box, dst_box, filter_mode);
+    } else
+    {
+        LOGE("Failed to get source texture for auxilliary_buffer_t copy!");
+    }
+}
+
+void wf::render_buffer_t::blit(const wf::render_buffer_t& source, wf::geometry_t src_box,
+    wf::geometry_t dst_box, wlr_scale_filter_mode filter_mode) const
+{
+    if (wlr_texture *src_wlr_tex = wlr_texture_from_buffer(wf::get_core().renderer, source.get_buffer()))
+    {
+        do_blit(src_wlr_tex, src_box, dst_box, filter_mode);
+        wlr_texture_destroy(src_wlr_tex);
+    } else
+    {
+        LOGE("Failed to create texture from source render_buffer_t for copy!");
+    }
+}
+
+wf::render_target_t::render_target_t(const render_buffer_t& buffer) : render_buffer_t(buffer)
+{}
+
+wf::render_target_t::render_target_t(const auxilliary_buffer_t& buffer) : render_buffer_t(
+        buffer.get_buffer(), buffer.get_size())
+{
+    // By default, we keep aux buffers in SRGB color space, as SRGB is efficiently implemented in Vulkan.
+    set_color_transform(
+        wlr_color_transform_init_linear_to_inverse_eotf(WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR),
+        WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR);
+}
+
+void wf::render_target_t::copy_from(const render_target_t& other)
+{
+    geometry     = other.geometry;
+    wl_transform = other.wl_transform;
+    scale     = other.scale;
+    subbuffer = other.subbuffer;
+    inverse_eotf = other.inverse_eotf;
+    output_transfer_function = other.output_transfer_function;
+}
+
+wf::render_target_t::render_target_t(const render_target_t& other) : render_buffer_t(other)
+{
+    copy_from(other);
+    if (inverse_eotf)
+    {
+        wlr_color_transform_ref(inverse_eotf);
+    }
+}
+
+wf::render_target_t::render_target_t(render_target_t&& other) : render_buffer_t(other)
+{
+    copy_from(other);
+    other.inverse_eotf = nullptr;
+}
+
+wf::render_target_t& wf::render_target_t::operator =(const render_target_t& other)
+{
+    if (this != &other)
+    {
+        if (inverse_eotf)
+        {
+            wlr_color_transform_unref(inverse_eotf);
+        }
+
+        render_buffer_t::operator =(other);
+        copy_from(other);
+        if (inverse_eotf)
+        {
+            wlr_color_transform_ref(inverse_eotf);
+        }
+    }
+
+    return *this;
+}
+
+wf::render_target_t& wf::render_target_t::operator =(render_target_t&& other)
+{
+    if (this != &other)
+    {
+        if (inverse_eotf)
+        {
+            wlr_color_transform_unref(inverse_eotf);
+        }
+
+        render_buffer_t::operator =(other);
+        copy_from(other);
+        other.inverse_eotf = nullptr;
+    }
+
+    return *this;
+}
+
+wf::render_target_t::~render_target_t()
+{
+    if (inverse_eotf)
+    {
+        wlr_color_transform_unref(inverse_eotf);
+    }
+}
+
+wf::render_target_t wf::render_target_t::translated(wf::pointf_t offset) const
+{
+    render_target_t copy = *this;
+    copy.geometry.x += offset.x;
+    copy.geometry.y += offset.y;
+    return copy;
+}
+
+wf::geometry_t wf::render_target_t::framebuffer_geometry_from_geometry_box(wf::geometry_t box) const
+{
+    /* Step 1: Make relative to the framebuffer */
+    box.x -= this->geometry.x;
+    box.y -= this->geometry.y;
+
+    /* Step 2: Apply scale to box */
+    box = box * scale;
+
+    /* Step 3: rotate */
+    wf::dimensions_t size = get_size();
+    if (wl_transform & 1)
+    {
+        std::swap(size.width, size.height);
+    }
+
+    wlr_fbox result;
+    wl_output_transform transform =
+        wlr_output_transform_invert((wl_output_transform)wl_transform);
+
+    wlr_fbox input_box{
+        .x     = (float)box.x,
+        .y     = (float)box.y,
+        .width = (float)box.width,
+        .height = (float)box.height,
+    };
+
+    wlr_fbox_transform(&result, &input_box, transform, size.width, size.height);
+
+    if (subbuffer)
+    {
+        return scale_box({0.0, 0.0, (double)get_size().width, (double)get_size().height},
+            subbuffer.value(), {result.x, result.y, result.width, result.height});
+    }
+
+    return {result.x, result.y, result.width, result.height};
+}
+
+wlr_box wf::render_target_t::framebuffer_box_from_geometry_box(wf::geometry_t box) const
+{
+    return containing_framebuffer_box(framebuffer_geometry_from_geometry_box(box));
+}
+
+wlr_box wf::render_target_t::framebuffer_texture_dst_box_from_geometry_box(wf::geometry_t box) const
+{
+    return round_fbox_to_texture_dst_box(framebuffer_geometry_from_geometry_box(box));
+}
+
+wf::geometry_t wf::render_target_t::aligned_geometry_from_geometry_box(wf::geometry_t box) const
+{
+    return geometry_box_from_framebuffer_box(framebuffer_texture_dst_box_from_geometry_box(box));
+}
+
+wf::region_t wf::render_target_t::framebuffer_region_from_geometry_region(const wf::regionf_t& region) const
+{
+    wf::region_t result;
+    for (const auto& rect : region)
+    {
+        auto box = framebuffer_geometry_from_geometry_box({
+            rect.x1,
+            rect.y1,
+            rect.x2 - rect.x1,
+            rect.y2 - rect.y1,
+        });
+        result |= containing_framebuffer_box(box);
+    }
+
+    return result;
+}
+
+wf::geometry_t wf::render_target_t::geometry_box_from_framebuffer_box(wlr_box _fb_box) const
+{
+    wf::geometry_t gbox = from_integer_box(_fb_box);
+    if (subbuffer)
+    {
+        gbox = scale_box(subbuffer.value(),
+            {0.0, 0.0, (double)get_size().width, (double)get_size().height}, gbox);
+    }
+
+    wf::dimensions_t current_fb_dimensions = get_size();
+    wlr_fbox result;
+    wlr_fbox input_box{
+        .x     = (float)gbox.x,
+        .y     = (float)gbox.y,
+        .width = (float)gbox.width,
+        .height = (float)gbox.height,
+    };
+    wlr_fbox_transform(&result, &input_box, (wl_output_transform)wl_transform,
+        current_fb_dimensions.width, current_fb_dimensions.height);
+
+    if (scale != 0.0f)
+    {
+        result.x     *= (1.0 / scale);
+        result.y     *= (1.0 / scale);
+        result.width *= (1.0 / scale);
+        result.height *= (1.0 / scale);
+    } else
+    {
+        LOGE("Render target scale is zero, cannot invert framebuffer box!");
+        return {0, 0, 0, 0}; // Return an empty/invalid box
+    }
+
+    result.x += this->geometry.x;
+    result.y += this->geometry.y;
+    return {result.x, result.y, result.width, result.height};
+}
+
+wf::regionf_t wf::render_target_t::geometry_region_from_framebuffer_region(const wf::region_t& region) const
+{
+    wf::regionf_t result;
+    for (const auto& rect : region)
+    {
+        result |= geometry_box_from_framebuffer_box(wlr_box_from_pixman_box(rect));
+    }
+
+    return result;
+}
+
+wf::render_pass_t::render_pass_t(const render_pass_params_t& p)
+{
+    this->params = p;
+    this->params.renderer = p.renderer ?: wf::get_core().renderer;
+    this->params.pass_opts.color_transform = p.pass_opts.color_transform ?: p.target.get_color_transform();
+    wf::dassert(p.target.get_buffer(), "Cannot run a render pass without a valid target!");
+}
+
+wf::regionf_t wf::render_pass_t::run(const wf::render_pass_params_t& params)
+{
+    wf::render_pass_t pass{params};
+    auto damage = pass.run_partial();
+    pass.submit();
+    return damage;
+}
+
+wf::regionf_t wf::render_pass_t::run_partial()
+{
+    auto accumulated_damage = params.damage;
+    if (params.flags & RPASS_EMIT_SIGNALS)
+    {
+        // Emit render_pass_begin
+        render_pass_begin_signal ev{*this, accumulated_damage};
+        wf::get_core().emit(&ev);
+    }
+
+    wf::regionf_t swap_damage = accumulated_damage;
+
+    // Gather instructions
+    std::vector<wf::scene::render_instruction_t> instructions;
+    if (params.instances)
+    {
+        for (auto& inst : *params.instances)
+        {
+            inst->schedule_instructions(instructions,
+                params.target, accumulated_damage);
+        }
+    }
+
+    // When we need the wlr pass, start rendering.
+    this->needs_restart = true;
+
+    // Clear visible background areas
+    if (params.flags & RPASS_CLEAR_BACKGROUND)
+    {
+        clear(accumulated_damage, params.background_color);
+    }
+
+    // Render instances
+    for (auto& instr : wf::reverse(instructions))
+    {
+        instr.pass = this;
+        instr.instance->render(instr);
+        if (params.reference_output)
+        {
+            instr.instance->presentation_feedback(params.reference_output);
+        }
+    }
+
+    if (params.flags & RPASS_EMIT_SIGNALS)
+    {
+        render_pass_end_signal end_ev{*this};
+        wf::get_core().emit(&end_ev);
+    }
+
+    return swap_damage;
+}
+
+wf::render_target_t wf::render_pass_t::get_target() const
+{
+    return params.target;
+}
+
+wlr_renderer*wf::render_pass_t::get_wlr_renderer() const
+{
+    return params.renderer;
+}
+
+wlr_render_pass*wf::render_pass_t::get_wlr_pass()
+{
+    return _get_pass();
+}
+
+void wf::render_pass_t::clear(const wf::regionf_t& region, const wf::color_t& color)
+{
+    wlr_box box{0, 0, params.target.get_size().width, params.target.get_size().height};
+    auto damage = params.target.framebuffer_region_from_geometry_region(region);
+
+    wlr_render_rect_options opts;
+    opts.blend_mode = WLR_RENDER_BLEND_MODE_NONE;
+    opts.box   = box;
+    opts.clip  = damage.to_pixman();
+    opts.color = {
+        .r = static_cast<float>(color.r),
+        .g = static_cast<float>(color.g),
+        .b = static_cast<float>(color.b),
+        .a = static_cast<float>(color.a),
+    };
+
+    wlr_render_pass_add_rect(_get_pass(), &opts);
+}
+
+void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& texture,
+    const wf::render_target_t& adjusted_target, const wf::geometry_t& geometry,
+    const wf::regionf_t& damage, float alpha)
+{
+    if (wlr_renderer_is_gles2(this->get_wlr_renderer()))
+    {
+        // This is a hack to make sure that plugins can do whatever they want and we render on the correct
+        // target. For example, managing auxilliary textures can mess up with the state of the pipeline on
+        // GLES but not on Vulkan, so to make it easier to write plugins, we just bind the render target again
+        // here to ensure that the state is correct.
+        wf::gles::bind_render_buffer(adjusted_target);
+    }
+
+    wf::region_t fb_damage = adjusted_target.framebuffer_region_from_geometry_region(damage);
+
+    wlr_render_texture_options opts{};
+    opts.texture = texture->get_wlr_texture();
+    opts.alpha   = &alpha;
+    opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
+
+    // use GL_NEAREST for integer scale.
+    // GL_NEAREST makes scaled text blocky instead of blurry, which looks better
+    // but only for integer scale.
+    const auto preferred_filter = adjusted_target.is_integer_scale() ?
+        WLR_SCALE_FILTER_NEAREST : WLR_SCALE_FILTER_BILINEAR;
+    opts.filter_mode = texture->get_filter_mode().value_or(preferred_filter);
+    opts.transform   = wlr_output_transform_compose(wlr_output_transform_invert(texture->get_transform()),
+        adjusted_target.wl_transform);
+    opts.clip    = fb_damage.to_pixman();
+    opts.src_box = texture->get_source_box().value_or(wlr_fbox{0, 0, 0, 0});
+    opts.dst_box = adjusted_target.framebuffer_texture_dst_box_from_geometry_box(geometry);
+
+    const auto& wait_point = texture->get_wait_timeline();
+    opts.wait_timeline = wait_point.timeline;
+    opts.wait_point    = wait_point.point;
+
+    auto ct = texture->get_color_transform();
+    wlr_color_primaries primaries{};
+    opts.color_encoding = ct.color_encoding;
+    opts.color_range    = ct.color_range;
+    wlr_color_primaries_from_named(&primaries, ct.primaries);
+    opts.primaries = &primaries;
+    opts.transfer_function = ct.transfer_function;
+
+    // The wlroots renderer does no implicit luminance scaling: the forward EOTF for SDR transfer
+    // functions yields values in [0,1] relative to the SDR reference white, but the inverse EOTF
+    // for ST2084 PQ interprets [0,1] as 0–10000 cd/m² absolute. Without correction, SDR content
+    // composited on an HDR output would appear ~100× too bright. Compute a multiplier that brings
+    // the per-texture linear values into the target's expected absolute domain.
+    const float luminance_multiplier = wf::compute_luminance_multiplier(
+        ct.transfer_function, adjusted_target.get_output_transfer_function());
+    if (luminance_multiplier != 1.0f)
+    {
+        opts.luminance_multiplier = &luminance_multiplier;
+    }
+
+    wlr_render_pass_add_texture(get_wlr_pass(), &opts);
+}
+
+void wf::render_pass_t::add_rect(const wf::color_t& color, const wf::render_target_t& adjusted_target,
+    const wf::geometry_t& geometry, const wf::regionf_t& damage)
+{
+    if (wlr_renderer_is_gles2(this->get_wlr_renderer()))
+    {
+        wf::gles::bind_render_buffer(adjusted_target);
+    }
+
+    wf::region_t fb_damage = adjusted_target.framebuffer_region_from_geometry_region(damage);
+    wlr_render_rect_options opts;
+    opts.color = color_to_render_color(color, adjusted_target.get_output_transfer_function());
+    opts.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED;
+    opts.clip = fb_damage.to_pixman();
+    opts.box  = adjusted_target.framebuffer_texture_dst_box_from_geometry_box(geometry);
+    wf::dassert(opts.box.width >= 0);
+    wf::dassert(opts.box.height >= 0);
+    wlr_render_pass_add_rect(_get_pass(), &opts);
+}
+
+bool wf::render_pass_t::submit()
+{
+    if (!this->_pass)
+    {
+        // No pass currently running.
+        needs_restart = false;
+        return true;
+    }
+
+    bool status = wlr_render_pass_submit(_pass);
+    this->_pass = NULL;
+    return status;
+}
+
+wf::render_pass_t::~render_pass_t()
+{
+    if (this->_pass)
+    {
+        LOGW("Dropping unsubmitted render pass!");
+    }
+}
+
+wf::render_pass_t::render_pass_t(render_pass_t&& other)
+{
+    *this = std::move(other);
+}
+
+wf::render_pass_t& wf::render_pass_t::operator =(render_pass_t&& other)
+{
+    if (this == &other)
+    {
+        return *this;
+    }
+
+    this->_pass  = other._pass;
+    other._pass  = NULL;
+    this->params = other.params;
+    this->needs_restart = other.needs_restart;
+    return *this;
+}
+
+bool wf::render_pass_t::prepare_gles_subpass()
+{
+    return prepare_gles_subpass(params.target);
+}
+
+bool wf::render_pass_t::prepare_gles_subpass(const wf::render_target_t& target)
+{
+    bool is_gles = wf::gles::run_in_context_if_gles([&]
+    {
+        GL_CALL(glEnable(GL_BLEND));
+        GL_CALL(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
+        wf::gles::bind_render_buffer(target);
+    });
+
+    return is_gles;
+}
+
+void wf::render_pass_t::finish_gles_subpass()
+{
+    // Bind the framebuffer again so that the wlr pass can continue as usual.
+    wf::gles::bind_render_buffer(params.target);
+    GL_CALL(glDisable(GL_SCISSOR_TEST));
+}
+
+#if WF_HAS_VULKANFX
+wf::vulkan_render_state_t*wf::render_pass_t::prepare_vulkan_subpass()
+{
+    if (!wlr_renderer_is_vk(this->get_wlr_renderer()))
+    {
+        return nullptr;
+    }
+
+    if (!active_command_buffer)
+    {
+        active_command_buffer = &vk::command_buffer_t::buffer_for_pass(*this);
+    }
+
+    return wf::get_core_impl().vulkan_state.get();
+}
+
+void wf::render_pass_t::end_vulkan_subpass()
+{
+    wlr_vk_render_pass_reset_pipeline(this->get_wlr_pass());
+}
+
+#endif
+
+wlr_render_pass*wf::render_pass_t::_get_pass()
+{
+    if (this->_pass)
+    {
+        return this->_pass;
+    }
+
+    if (!this->needs_restart)
+    {
+        LOGE("Cannot get wlr_render_pass before starting the render pass!");
+        return nullptr;
+    }
+
+    this->_pass = wlr_renderer_begin_buffer_pass(
+        params.renderer ?: wf::get_core().renderer,
+        params.target.get_buffer(),
+        & params.pass_opts);
+
+    return _pass;
+}
+
+void wf::render_target_t::set_color_transform(wlr_color_transform *transform,
+    wlr_color_transfer_function target_tf)
+{
+    if (transform)
+    {
+        wlr_color_transform_ref(transform);
+    }
+
+    if (inverse_eotf)
+    {
+        wlr_color_transform_unref(inverse_eotf);
+    }
+
+    inverse_eotf = transform;
+    output_transfer_function = target_tf;
+}
+
+bool wf::render_target_t::is_integer_scale() const
+{
+    return std::abs(scale - std::round(scale)) < 0.001;
+}

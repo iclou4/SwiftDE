@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="vk-color-management">
+		<_short>ICC profile support for the GLES2 renderer</_short>
+		<_long>Adds support for ICC profiles when running with the GLES2 renderer. Needs wlroots' vulkan renderer.</_long>
+		<category>Utility</category>
+	</plugin>
+</wayfire>

@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="core">
+		<_short>Core</_short>
+		<_long>General options.</_long>
+		<category>General</category>
+		<option name="plugins" type="string">
+			<_short>Plugins</_short>
+			<_long>Loads the specified plugins, space-separated list.</_long>
+			<default>alpha animate autostart command cube decoration expo fast-switcher fisheye foreign-toplevel grid gtk-shell idle invert move oswitch place resize session-lock shortcuts-inhibit switcher vswitch wayfire-shell window-rules wobbly wrot zoom</default>
+		</option>
+		<option name="close_top_view" type="activator">
+			<_short>Close view</_short>
+			<_long>Closes the currently focused window with the specified key.</_long>
+			<default>&lt;super&gt; KEY_Q | &lt;alt&gt; KEY_F4</default>
+		</option>
+		<!-- Horizontal/Vertical workspaces -->
+		<option name="vwidth" type="int">
+			<_short>Horizontal virtual size</_short>
+			<_long>Sets the number of horizontal workspaces.  Currently, cannot be changed at runtime.</_long>
+			<default>3</default>
+			<min>1</min>
+		</option>
+		<option name="vheight" type="int">
+			<_short>Vertical virtual size</_short>
+			<_long>Sets the number of vertical workspaces.  Currently, cannot be changed at runtime.</_long>
+			<default>3</default>
+			<min>1</min>
+		</option>
+		<option name="background_color" type="color">
+			<_short>Background color</_short>
+			<_long>Sets the background color of workspaces.  Visible when nothing is drawing the background.</_long>
+			<default>0.1 0.1 0.1 1.0</default>
+		</option>
+		<option name="preferred_decoration_mode" type="string">
+			<_short>Preferred decoration mode</_short>
+			<_long>Sets the preferred window decoration mode.  Possible values are `client` and `server`.  `client` allows the client to draw its own decorations.</_long>
+			<default>client</default>
+			<desc>
+				<value>client</value>
+				<_name>Client</_name>
+			</desc>
+			<desc>
+				<value>server</value>
+				<_name>Server</_name>
+			</desc>
+		</option>
+		<option name="xwayland" type="string">
+			<_short>XWayland</_short>
+			<_long>Enables or disables XWayland support, which allows X11 applications to be used.</_long>
+			<default>true</default>
+			<desc>
+				<value>true</value>
+				<_name>Enable</_name>
+			</desc>
+			<desc>
+				<value>false</value>
+				<_name>Disable</_name>
+			</desc>
+			<desc>
+				<value>lazy</value>
+				<_name>Start when client connects</_name>
+			</desc>
+		</option>
+		<option name="xwayland_startup_script" type="string">
+			<_short>XWayland startup script</_short>
+			<_long>A script to execute when the XWayland server starts. This script is executed in a POSIX shell (/bin/sh).</_long>
+			<default></default>
+		</option>
+		<option name="max_render_time" type="int">
+			<_short>Deprecated render deadline budget</_short>
+			<_long>Legacy global render deadline budget. Use the per-output min_render_budget option instead.</_long>
+			<default>-1</default>
+		</option>
+		<option name="transaction_timeout" type="int">
+			<_short>Timeout for transactions</_short>
+			<_long>Maximum time in milliseconds to wait for clients to respond to compositor requests.</_long>
+			<default>100</default>
+      <min>0</min>
+		</option>
+		<option name="focus_button_with_modifiers" type="bool">
+			<_short>Focus on click if keyboard modifiers are pressed</_short>
+			<_long>Allow focusing the clicked view even if keyboard modifiers are pressed. Without this option, click-to-focus only works if no modifiers are pressed.</_long>
+			<default>false</default>
+		</option>
+		<option name="focus_buttons" type="activator">
+			<_short>Mouse buttons to focus views</_short>
+			<_long>Clicking on a view with any of the mouse buttons of these will focus it.</_long>
+			<default>BTN_LEFT | BTN_MIDDLE | BTN_RIGHT</default>
+		</option>
+		<option name="focus_buttons_passthrough" type="bool">
+			<_short>Pass through buttons to client</_short>
+			<_long>Whether to pass buttons through to the client when switching the focus via clicking</_long>
+			<default>true</default>
+		</option>
+		<option name="exit" type="key">
+			<_short>Wayfire Shutdown</_short>
+			<_long>Calls the shutdown routines for wayfire.</_long>
+			<default>&lt;ctrl&gt; &lt;alt&gt; KEY_BACKSPACE</default>
+		</option>
+	</plugin>
+</wayfire>
