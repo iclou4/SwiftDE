@@ -1,192 +1,100 @@
-# [Wayfire]
+# SwiftDE
 
-[Wayfire]: https://wayfire.org
+![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)
+![SwiftOS](https://img.shields.io/badge/SwiftOS-FA7343?logo=swift&logoColor=FA7343&labelColor=white&color=FA7343)
+![Apple](https://img.shields.io/badge/Apple-000000?logo=apple&labelColor=000000)
 
-![Version](https://img.shields.io/github/v/release/WayfireWM/wayfire)
-[![Matrix: #wayfire:matrix.org](https://img.shields.io/badge/matrix-%23wayfire%3Amatrix.org-blue)](https://matrix.to/#/#wayfire:matrix.org)
-[![IRC: #wayfire on Libera.chat](https://img.shields.io/badge/IRC-%23wayfire%20at%20libera.chat-green)](https://web.libera.chat/#wayfire)
-[![Discord](https://img.shields.io/discord/1144831589877043220?label=Discord)](https://discord.gg/5SWAxmBCUH)
-[![CI](https://github.com/WayfireWM/wayfire/workflows/CI/badge.svg)](https://github.com/WayfireWM/wayfire/actions)
-[![Packaging status](https://repology.org/badge/tiny-repos/wayfire.svg)](https://repology.org/project/wayfire/versions)
-[![License](https://img.shields.io/github/license/WayfireWM/wayfire)](LICENSE)
+A macOS Sequoia-inspired desktop environment built on Wayfire (C++/Wayland compositor).
 
-###### [Get started] | [Manual] | [Configuration]
+## Overview
 
-[Get started]: https://github.com/WayfireWM/wayfire/wiki/Tutorial
-[Manual]: https://github.com/WayfireWM/wayfire/wiki/General
-[Configuration]: https://github.com/WayfireWM/wayfire/wiki/Configuration
+SwiftDE is a modern desktop environment for Linux that brings the elegance and usability of macOS Sequoia to the FOSS ecosystem. Built on Wayfire, a flexible Wayland compositor with plugin-based architecture.
 
-Wayfire is a 3D [Wayland] compositor, inspired by [Compiz] and based on [wlroots].
+## Design Philosophy
 
-It aims to create a customizable, extendable and lightweight environment without sacrificing its appearance.
+**Inspired by Apple's Human Interface Guidelines** — The visual design, interaction patterns, and system behaviors are modeled after macOS Sequoia. We credit Apple's design team for the original concepts.
 
-[![Wayfire demos](https://img.youtube.com/vi_webp/2PtNzxDsxYM/maxresdefault.webp)](https://youtube.com/playlist?list=PLb7YRKEhWEBUIoT-a29UoJW9mhfzjpNle "YouTube – Wayfire demos")
-[![YouTube Play Button](https://www.iconfinder.com/icons/317714/download/png/16)](https://youtube.com/playlist?list=PLb7YRKEhWEBUIoT-a29UoJW9mhfzjpNle) · [Wayfire demos](https://youtube.com/playlist?list=PLb7YRKEhWEBUIoT-a29UoJW9mhfzjpNle)
+**Built on Wayfire** — Leveraging Wayfire's plugin-based Wayland compositor with wlroots. C++17, meson build system.
 
-[Wayland]: https://wayland.freedesktop.org
-[wlroots]: https://github.com/swaywm/wlroots
-[Compiz]: https://launchpad.net/compiz
+**Pure Wayland, No GNOME Dependencies** — SwiftDE runs as a standalone Wayland compositor. Not a GNOME extension, not a fork of mutter — a complete desktop environment.
 
-## Dependencies
+## Architecture
 
-### Wayfire Dependencies
+```
+┌─────────────────────────────────────┐
+│           Wayfire Core              │  ← Wayland Compositor (wlroots)
+├─────────────────────────────────────┤
+│  Plugins: tile, scale, expo, cube,  │  ← Window Management
+│  decoration, wobbly, animate, ...   │
+├─────────────────────────────────────┤
+│       SwiftDE Shell Components      │  ← Panel, Dock, Launcher (planned)
+├─────────────────────────────────────┤
+│       Wayfire Config (INI)          │  ← Configuration
+└─────────────────────────────────────┘
+```
 
-These are the dependencies needed for building Wayfire.
+## Components (Planned)
 
-- [Cairo](https://cairographics.org)
-- [Pango](https://pango.gnome.org/) and PangoCairo
-- [FreeType](https://freetype.org)
-- [GLM](https://glm.g-truc.net)
-- [libdrm](https://dri.freedesktop.org/wiki/DRM/)
-- [libevdev](https://freedesktop.org/wiki/Software/libevdev/)
-- [libGL](https://mesa3d.org)
-- [libinput](https://freedesktop.org/wiki/Software/libinput/)
-- [libjpeg](https://libjpeg-turbo.org)
-- [libpng](http://libpng.org/pub/png/libpng.html)
-- [libxkbcommon](https://xkbcommon.org)
-- [libxml2](http://xmlsoft.org/)
-- [Pixman](https://pixman.org)
-- [pkg-config](https://freedesktop.org/wiki/Software/pkg-config/)
-- [Wayland](https://wayland.freedesktop.org)
-- [wayland-protocols](https://gitlab.freedesktop.org/wayland/wayland-protocols)
-- [wf-config](https://github.com/WayfireWM/wf-config)
-- [wlroots](https://github.com/swaywm/wlroots)
+| Component | Description |
+|-----------|-------------|
+| `swiftde-panel` | Top bar + dock (macOS-style) |
+| `swiftde-launcher` | App launcher (Spotlight-style) |
+| `swiftde-workspaces` | Mission Control-style workspace management |
+| `swiftde-bg` | Wallpaper daemon |
+| `swiftde-notifications` | Notification center |
+| `swiftde-osd` | On-screen display (volume, brightness) |
+| `swiftde-greeter` | Login/lock screen |
+| `swiftde-settings` | Settings application |
+| `swiftde-idle` | Idle detection & power management |
 
-### wlroots Dependencies
+## Building
 
-These are the dependencies needed for building wlroots, and should be installed before building it.
-They are relevant for cases when the system doesn't have a version of wlroots installed.
+### Prerequisites
 
-#### DRM Backend (required)
+- C++17 compiler (GCC 11+ or Clang 13+)
+- meson 1.0+, ninja
+- Dependencies: `wayland-protocols`, `wlroots`, `cairo`, `pango`, `gdk-pixbuf`, `libxml2`, `json-c`, `libevdev`, `libinput`, `pixman`, `glm`, `fmt`, `spdlog`, `toml++`, `nlohmann-json`
 
-- [libdisplay-info-dev](https://gitlab.freedesktop.org/emersion/libdisplay-info)
-- [hwdata-dev](https://github.com/vcrhonek/hwdata)
+### Build
 
-#### GLES2 renderer (required)
-- [libglvnd](https://gitlab.freedesktop.org/glvnd/libglvnd)
-- [mesa](https://gitlab.freedesktop.org/mesa/mesa) (with libEGL and gbm support)
+```bash
+# Clone the repository
+git clone https://github.com/vladislavtd1-cpu/SwiftDE
+cd SwiftDE
 
-#### Libinput Backend (required)
-- [libinput](https://gitlab.freedesktop.org/libinput/libinput)
-
-#### Session Provider (required)
-
-- libudev (via [systemd](https://systemd.io/) **or** other providers)
-- [seatd](https://git.sr.ht/~kennylevinsen/seatd)
-
-#### XWayland Support (optional)
-
-- [xcb](https://xcb.freedesktop.org/)
-- [xcb-composite](https://xorg.freedesktop.org/wiki/)
-- [xcb-render](https://xorg.freedesktop.org/wiki/)
-- [xcb-xfixes](https://xorg.freedesktop.org/wiki/)
-
-#### X11 Backend (optional)
-
-- [xcb](https://xcb.freedesktop.org/)
-- [x11-xcb](https://xcb.freedesktop.org/)
-- [xcb-xinput](https://xorg.freedesktop.org/wiki/)
-- [xcb-xfixes](https://xorg.freedesktop.org/wiki/)
-
-## Installation
-
-The easiest way to install Wayfire, wf-shell and WCM to get a functional desktop is to use the [install scripts](https://github.com/WayfireWM/wf-install).
-
-Alternatively, you can build from source:
-
-``` sh
-meson build
+# Build
+meson setup build
 ninja -C build
-sudo ninja -C build install
 ```
 
-**Note**: `wf-config` and `wlroots` can be built as submodules, by specifying
-`-Duse_system_wfconfig=disabled` and `-Duse_system_wlroots=disabled` options to `meson`.
-This is the default if they are not present on your system.
+### Testing
 
-Installing [wf-shell](https://github.com/WayfireWM/wf-shell) is recommended for a complete experience.
-
-External plugins can be installed either manually or with `wayfire-plugin`, for example:
-
-```sh
-wayfire-plugin install https://github.com/soreau/pixdecor
+```bash
+# From TTY (Ctrl+Alt+F3)
+# Build on F1, test on F3:
+./build/src/wayfire
 ```
 
-See [Managing External Plugins](docs/wayfire-plugin.md) for more information.
+## macOS-Style Features (Planned)
 
-###### Arch Linux
+- **Dock** — Bottom-centered, magnification on hover, running app indicators
+- **Top Bar** — Menu bar with app menus, system status, clock, control center
+- **Mission Control** — Gesture-driven workspace overview with Exposé
+- **Launchpad** — Full-screen app grid with folders
+- **Control Center** — Quick toggles (Wi-Fi, Bluetooth, AirDrop, Focus modes)
+- **Notification Center** — Grouped by app, interactive widgets
+- **Window Management** — Native split view, Stage Manager, quick tiling shortcuts
 
-[wayfire](https://aur.archlinux.org/packages/wayfire/) and [wayfire-git] are available in the [AUR].
+## Credits
 
-``` sh
-yay -S wayfire
-```
+- **Apple** — macOS Sequoia design language (Human Interface Guidelines)
+- **Wayfire Contributors** — Wayland compositor (wlroots-based)
+- **wlroots Contributors** — Wayland compositor library
 
-[AUR]: https://aur.archlinux.org
-[wayfire-git]: https://aur.archlinux.org/packages/wayfire-git/
+## License
 
-###### Exherbo
+GPL-3.0-or-later
 
-``` sh
-cave resolve -x wayfire
-```
+## Contributing
 
-###### Fedora
-
-``` sh
-dnf install wayfire
-```
-
-###### FreeBSD
-Install the latest release and recommended addons with
-``` sh
-pkg install wayfire wayfire-plugins-extra wf-shell wcm
-```
-
-###### Gentoo
-Install the latest release with
-```sh
-emerge --ask --verbose wayfire
-```
-and to use the live version
-```sh
-emerge --ask --verbose "=gui-wm/wayfire-9999"
-```
-
-###### NixOS
-
-Enable Wayfire in your NixOS configuration:
-```nix
-programs.wayfire = {
-  enable = true;
-  plugins = with pkgs.wayfirePlugins; [
-    wcm
-    wf-shell
-    wayfire-plugins-extra
-  ];
-};
-```
-
-###### Ubuntu/Debian 13
-
-```
-apt install wayfire
-```
-
-###### Void
-
-``` sh
-xbps-install -S wayfire
-```
-
-## Configuration
-
-Copy [`wayfire.ini`] to `~/.config/wayfire.ini` or `~/.config/wayfire/wayfire.ini`.
-Before running Wayfire, you may want to change the command to start a terminal.
-See the [Configuration] document for information on the options.
-
-[`wayfire.ini`]: wayfire.ini
-
-## Running
-
-Run [`wayfire`][Manual] from a TTY, or via a Wayland-compatible login manager.
+This is a personal project. Issues and PRs welcome for bug fixes.
