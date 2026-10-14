@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/iclou4/SwiftDE/master/System/Library/CoreServices/Topbar.app/Contents/Resources/apple_clean.svg" width="64" height="64" alt="SwiftDE Logo" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/apple_dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/apple_light.svg">
+    <img alt="SwiftDE Logo" src="docs/images/apple_light.svg" width="64" height="64" />
+  </picture>
 </p>
 
 <h1 align="center">SwiftDE</h1>
