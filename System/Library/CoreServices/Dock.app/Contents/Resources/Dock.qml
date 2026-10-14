@@ -134,7 +134,13 @@ ApplicationWindow {
         if (!item) return
         closeAllMenus()
         if (item.id === "launchpad") {
-            sysProc.toggleLaunchpad()
+            try {
+                if (typeof sysProc.toggleLaunchpad === "function") {
+                    sysProc.toggleLaunchpad()
+                    return
+                }
+            } catch (e) {}
+            sysProc.launch("pkill -f Launchpad.qml || env WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl /home/gg/SwiftDE/SwiftDE-RunQML --layer /home/gg/SwiftDE/System/Library/CoreServices/Launchpad.app/Contents/Resources/Launchpad.qml")
             return
         }
         if (item.command) {
