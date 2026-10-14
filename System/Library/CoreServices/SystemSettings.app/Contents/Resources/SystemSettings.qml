@@ -735,10 +735,10 @@ Window {
                             spacing: 12
 
                             readonly property var dynItems: [
-                                { name: "Sequoia", thumb: "Assets/thumb_sequoia.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_sequoia.jpg" },
-                                { name: "Macintosh", thumb: "Assets/thumb_macintosh.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_macintosh.jpg" },
-                                { name: "Sonoma", thumb: "Assets/thumb_sonoma.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_sonoma.jpg" },
-                                { name: "Ventura ↓", thumb: "Assets/thumb_ventura.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_ventura.jpg" }
+                                { name: "Sequoia", thumb: "Assets/thumb_sequoia.png", wall: "Library/DesktopPictures/wall_sequoia.jpg" },
+                                { name: "Macintosh", thumb: "Assets/thumb_macintosh.png", wall: "Library/DesktopPictures/wall_macintosh.jpg" },
+                                { name: "Sonoma", thumb: "Assets/thumb_sonoma.png", wall: "Library/DesktopPictures/wall_sonoma.jpg" },
+                                { name: "Ventura ↓", thumb: "Assets/thumb_ventura.png", wall: "Library/DesktopPictures/wall_ventura.jpg" }
                             ]
 
                             Repeater {
@@ -831,10 +831,10 @@ Window {
                             spacing: 12
 
                             readonly property var landItems: [
-                                { name: "Sequoia Sunrise", thumb: "Assets/thumb_sequoia_sunrise.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/Wallpaper.jpg" },
-                                { name: "Sonoma Horizon ↓", thumb: "Assets/thumb_sonoma_horizon.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_sonoma_horizon.jpg" },
-                                { name: "California's Temblor Range ↓", thumb: "Assets/thumb_temblor.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_temblor.jpg" },
-                                { name: "Redwoods from Above ↓", thumb: "Assets/thumb_redwoods.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_redwoods.jpg" }
+                                { name: "Sequoia Sunrise", thumb: "Assets/thumb_sequoia_sunrise.png", wall: "Library/DesktopPictures/Wallpaper.jpg" },
+                                { name: "Sonoma Horizon ↓", thumb: "Assets/thumb_sonoma_horizon.png", wall: "Library/DesktopPictures/wall_sonoma_horizon.jpg" },
+                                { name: "California's Temblor Range ↓", thumb: "Assets/thumb_temblor.png", wall: "Library/DesktopPictures/wall_temblor.jpg" },
+                                { name: "Redwoods from Above ↓", thumb: "Assets/thumb_redwoods.png", wall: "Library/DesktopPictures/wall_redwoods.jpg" }
                             ]
 
                             Repeater {
@@ -930,10 +930,10 @@ Window {
                             spacing: 12
 
                             readonly property var cityItems: [
-                                { name: "Dubai", thumb: "Assets/thumb_dubai.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_dubai.jpg" },
-                                { name: "Los Angeles", thumb: "Assets/thumb_highways.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_highways.jpg" },
-                                { name: "Sunset City", thumb: "Assets/thumb_sunset_city.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_sunset_city.jpg" },
-                                { name: "Tokyo", thumb: "Assets/thumb_tokyo.png", wall: "/home/gg/SwiftDE/Library/DesktopPictures/wall_tokyo.jpg" }
+                                { name: "Dubai", thumb: "Assets/thumb_dubai.png", wall: "Library/DesktopPictures/wall_dubai.jpg" },
+                                { name: "Los Angeles", thumb: "Assets/thumb_highways.png", wall: "Library/DesktopPictures/wall_highways.jpg" },
+                                { name: "Sunset City", thumb: "Assets/thumb_sunset_city.png", wall: "Library/DesktopPictures/wall_sunset_city.jpg" },
+                                { name: "Tokyo", thumb: "Assets/thumb_tokyo.png", wall: "Library/DesktopPictures/wall_tokyo.jpg" }
                             ]
 
                             Repeater {

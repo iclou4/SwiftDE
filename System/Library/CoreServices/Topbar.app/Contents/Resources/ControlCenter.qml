@@ -1,12 +1,30 @@
 import QtQuick
 import QtQuick.Shapes
+import Qt5Compat.GraphicalEffects
 import SwiftDE 1.0
 
 Item {
     id: ccRoot
     property bool isOpen: false
     property var sysProcRef: null
+    property var wallpaperSource: null
     property string currentView: "main" // "main" or "wifi"
+
+    readonly property bool isDark: sysProcRef ? sysProcRef.isDark : false
+
+    // macOS Sequoia Light & Dark Theme Palette
+    readonly property color cardOuterBg: isDark ? Qt.rgba(0.12, 0.12, 0.14, 0.72) : Qt.rgba(0.92, 0.92, 0.94, 0.70)
+    readonly property color cardOuterBorder: isDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12)
+    readonly property color cardInnerBg: isDark ? Qt.rgba(0.22, 0.22, 0.25, 0.60) : Qt.rgba(1.0, 1.0, 1.0, 0.55)
+    readonly property color cardInnerBorder: isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.40)
+    readonly property color textPrimary: isDark ? "#f5f5f7" : "#1c1c1e"
+    readonly property color textSecondary: isDark ? "#98989d" : "#636366"
+    readonly property color textTertiary: isDark ? "#636366" : "#8e8e93"
+    readonly property color rowHoverBg: isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+    readonly property color trackBg: isDark ? Qt.rgba(1.0, 1.0, 1.0, 0.16) : Qt.rgba(0.20, 0.20, 0.22, 0.18)
+    readonly property color sliderKnobBorder: isDark ? Qt.rgba(0, 0, 0, 0.20) : Qt.rgba(0, 0, 0, 0.12)
+    readonly property color separatorColor: isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.10)
+    readonly property color chevronColor: isDark ? "#8e8e93" : "#48484a"
 
     FontLoader {
         id: sfSymbols
@@ -52,26 +70,146 @@ Item {
         }
     }
 
-    // Outer Frosted Glass Card Container (Exact macOS Sequoia light frosted material)
+    // --- Wallpaper Blur Pipeline ---
+    // Fallback wallpaper image if not passed from Topbar
+    Image {
+        id: ccWallFallback
+        width: Screen.width > 0 ? Screen.width : 1920
+        height: Screen.height > 0 ? Screen.height : 1080
+        source: (sysProcRef && sysProcRef.wallpaperUrl.length > 0) ? sysProcRef.wallpaperUrl : "../../../../../../Library/DesktopPictures/Wallpaper.jpg"
+        fillMode: Image.PreserveAspectCrop
+        visible: false
+        cache: false
+    }
+
+    // Crop wallpaper area directly behind Control Center
+    Item {
+        id: ccWallSlice
+        width: Math.max(1, cardBox.width)
+        height: Math.max(1, cardBox.height)
+        visible: false
+        clip: true
+
+        ShaderEffectSource {
+            anchors.fill: parent
+            sourceItem: (ccRoot.wallpaperSource !== null && ccRoot.wallpaperSource !== undefined) ? ccRoot.wallpaperSource : ccWallFallback
+            sourceRect: Qt.rect(
+                Math.max(0, ccRoot.x),
+                Math.max(0, ccRoot.y),
+                Math.max(1, cardBox.width),
+                Math.max(1, cardBox.height)
+            )
+            hideSource: false
+            live: ccRoot.isOpen
+        }
+    }
+
+    // Downscale for deep acrylic diffusion and GPU efficiency
+    Item {
+        id: ccDownsampled
+        width: Math.max(1, Math.round(cardBox.width / 4))
+        height: Math.max(1, Math.round(cardBox.height / 4))
+        visible: false
+
+        ShaderEffectSource {
+            anchors.fill: parent
+            sourceItem: ccWallSlice
+            hideSource: false
+            live: ccRoot.isOpen
+            smooth: true
+        }
+    }
+
+    FastBlur {
+        id: ccBlurPass
+        anchors.fill: ccDownsampled
+        source: ccDownsampled
+        radius: 64
+        transparentBorder: false
+        visible: false
+    }
+
+    // Upscale blurred result
+    Item {
+        id: ccUpscaled
+        width: Math.max(1, cardBox.width)
+        height: Math.max(1, cardBox.height)
+        visible: false
+
+        ShaderEffectSource {
+            anchors.fill: parent
+            sourceItem: ccBlurPass
+            hideSource: false
+            live: ccRoot.isOpen
+            smooth: true
+        }
+    }
+
+    FastBlur {
+        id: ccFinalBlur
+        anchors.fill: ccUpscaled
+        source: ccUpscaled
+        radius: 32
+        transparentBorder: false
+        visible: false
+    }
+
+    // Rounded Mask for Card Container
+    Rectangle {
+        id: ccMask
+        anchors.fill: cardBox
+        radius: cardBox.radius
+        visible: false
+    }
+
+    // Outer subtle drop shadow
+    Rectangle {
+        id: cardShadow
+        anchors.fill: cardBox
+        anchors.margins: -1
+        radius: cardBox.radius + 1
+        color: "transparent"
+        border.color: ccRoot.isDark ? Qt.rgba(0, 0, 0, 0.40) : Qt.rgba(0, 0, 0, 0.14)
+        border.width: 1
+        visible: ccRoot.isOpen
+        z: 0
+    }
+
+    // Outer Frosted Glass Card Container (Exact macOS Sequoia frosted material)
     Rectangle {
         id: cardBox
         width: 315
         height: (ccRoot.currentView === "wifi" ? wifiCol.height : mainCol.height) + 20
         radius: 20
-        color: Qt.rgba(0.92, 0.92, 0.94, 0.72)
-        border.color: Qt.rgba(0, 0, 0, 0.12)
-        border.width: 0.6
+        color: "transparent"
         clip: true
+        z: 1
 
-        // Outer subtle drop shadow
+        // Masked Blurred Wallpaper Backdrop
+        OpacityMask {
+            anchors.fill: parent
+            source: ccFinalBlur
+            maskSource: ccMask
+            visible: ccRoot.isOpen
+        }
+
+        // Frosted Acrylic Tint Layer
         Rectangle {
             anchors.fill: parent
-            anchors.margins: -1
-            radius: 21
-            color: "transparent"
-            border.color: Qt.rgba(0, 0, 0, 0.14)
-            border.width: 1
-            z: -1
+            radius: cardBox.radius
+            color: ccRoot.cardOuterBg
+            border.color: ccRoot.cardOuterBorder
+            border.width: 0.6
+        }
+
+        // Inner Specular Top Highlight
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            radius: cardBox.radius
+            color: ccRoot.isDark ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.45)
         }
 
         Behavior on height {
@@ -127,8 +265,8 @@ Item {
                         width: 143
                         height: 110
                         radius: 14
-                        color: Qt.rgba(1.0, 1.0, 1.0, 0.55)
-                        border.color: Qt.rgba(1, 1, 1, 0.40)
+                        color: ccRoot.cardInnerBg
+                        border.color: ccRoot.cardInnerBorder
                         border.width: 0.5
 
                         Column {
@@ -145,7 +283,7 @@ Item {
                                     id: wifiRowHover
                                     anchors.fill: parent
                                     radius: 10
-                                    color: wifiRowMa.containsMouse ? Qt.rgba(0, 0, 0, 0.06) : "transparent"
+                                    color: wifiRowMa.containsMouse ? ccRoot.rowHoverBg : "transparent"
                                     Behavior on color { ColorAnimation { duration: 80 } }
                                 }
 
@@ -189,12 +327,12 @@ Item {
                                         text: "Wi-Fi"
                                         font.pixelSize: 12
                                         font.weight: Font.DemiBold
-                                        color: "#1c1c1e"
+                                        color: ccRoot.textPrimary
                                     }
                                     Text {
                                         text: (sysProcRef && sysProcRef.wifiEnabled) ? (sysProcRef.wifiSsid !== "" ? sysProcRef.wifiSsid : "On") : "Off"
                                         font.pixelSize: 10
-                                        color: "#636366"
+                                        color: ccRoot.textSecondary
                                         elide: Text.ElideRight
                                         width: parent.width
                                     }
@@ -208,7 +346,7 @@ Item {
                                     text: "›"
                                     font.pixelSize: 16
                                     font.weight: Font.DemiBold
-                                    color: "#48484a"
+                                    color: ccRoot.chevronColor
                                 }
 
                                 // Click on row opens Wi-Fi details view
@@ -234,7 +372,7 @@ Item {
                                     id: btRowHover
                                     anchors.fill: parent
                                     radius: 10
-                                    color: btRowMa.containsMouse ? Qt.rgba(0, 0, 0, 0.06) : "transparent"
+                                    color: btRowMa.containsMouse ? ccRoot.rowHoverBg : "transparent"
                                     Behavior on color { ColorAnimation { duration: 80 } }
                                 }
 
@@ -276,12 +414,12 @@ Item {
                                         text: "Bluetooth"
                                         font.pixelSize: 12
                                         font.weight: Font.DemiBold
-                                        color: "#1c1c1e"
+                                        color: ccRoot.textPrimary
                                     }
                                     Text {
                                         text: (sysProcRef && sysProcRef.bluetoothEnabled) ? "On" : "Off"
                                         font.pixelSize: 10
-                                        color: "#636366"
+                                        color: ccRoot.textSecondary
                                     }
                                 }
 
@@ -293,7 +431,7 @@ Item {
                                     text: "›"
                                     font.pixelSize: 16
                                     font.weight: Font.DemiBold
-                                    color: "#48484a"
+                                    color: ccRoot.chevronColor
                                 }
 
                                 MouseArea {
@@ -317,7 +455,7 @@ Item {
                                     id: airdropRowHover
                                     anchors.fill: parent
                                     radius: 10
-                                    color: airdropRowMa.containsMouse ? Qt.rgba(0, 0, 0, 0.06) : "transparent"
+                                    color: airdropRowMa.containsMouse ? ccRoot.rowHoverBg : "transparent"
                                     Behavior on color { ColorAnimation { duration: 80 } }
                                 }
 
@@ -359,12 +497,12 @@ Item {
                                         text: "AirDrop"
                                         font.pixelSize: 12
                                         font.weight: Font.DemiBold
-                                        color: "#1c1c1e"
+                                        color: ccRoot.textPrimary
                                     }
                                     Text {
                                         text: sysProcRef ? sysProcRef.airdropState : "Everyone"
                                         font.pixelSize: 10
-                                        color: "#636366"
+                                        color: ccRoot.textSecondary
                                         elide: Text.ElideRight
                                         width: parent.width
                                     }
@@ -378,7 +516,7 @@ Item {
                                     text: "›"
                                     font.pixelSize: 16
                                     font.weight: Font.DemiBold
-                                    color: "#48484a"
+                                    color: ccRoot.chevronColor
                                 }
 
                                 MouseArea {
@@ -407,8 +545,8 @@ Item {
                             width: parent.width
                             height: 46
                             radius: 14
-                            color: Qt.rgba(1.0, 1.0, 1.0, 0.55)
-                            border.color: Qt.rgba(1, 1, 1, 0.40)
+                            color: (sysProcRef && sysProcRef.focusEnabled) ? "#007aff" : ccRoot.cardInnerBg
+                            border.color: ccRoot.cardInnerBorder
                             border.width: 0.5
 
                             Row {
@@ -426,7 +564,7 @@ Item {
                                         text: "\uFE90"
                                         font.family: sfSymbols.name
                                         font.pixelSize: 17
-                                        color: (sysProcRef && sysProcRef.focusEnabled) ? "#ffffff" : "#1c1c1e"
+                                        color: (sysProcRef && sysProcRef.focusEnabled) ? "#ffffff" : ccRoot.textPrimary
                                     }
                                 }
 
@@ -435,7 +573,7 @@ Item {
                                     text: "Focus"
                                     font.pixelSize: 12
                                     font.weight: Font.DemiBold
-                                    color: "#1c1c1e"
+                                    color: (sysProcRef && sysProcRef.focusEnabled) ? "#ffffff" : ccRoot.textPrimary
                                 }
                             }
 
@@ -459,8 +597,8 @@ Item {
                                 width: 67.5
                                 height: 56
                                 radius: 14
-                                color: (sysProcRef && sysProcRef.stageManagerEnabled) ? "#007aff" : Qt.rgba(1.0, 1.0, 1.0, 0.55)
-                                border.color: Qt.rgba(1, 1, 1, 0.40)
+                                color: (sysProcRef && sysProcRef.stageManagerEnabled) ? "#007aff" : ccRoot.cardInnerBg
+                                border.color: ccRoot.cardInnerBorder
                                 border.width: 0.5
                                 Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -482,7 +620,7 @@ Item {
                                         text: "Stage\nManager"
                                         font.pixelSize: 10
                                         font.weight: Font.Medium
-                                        color: (sysProcRef && sysProcRef.stageManagerEnabled) ? "#ffffff" : "#1c1c1e"
+                                        color: (sysProcRef && sysProcRef.stageManagerEnabled) ? "#ffffff" : ccRoot.textPrimary
                                         horizontalAlignment: Text.AlignHCenter
                                         lineHeight: 0.95
                                     }
@@ -502,8 +640,8 @@ Item {
                                 width: 67.5
                                 height: 56
                                 radius: 14
-                                color: (sysProcRef && sysProcRef.screenMirroringEnabled) ? "#007aff" : Qt.rgba(1.0, 1.0, 1.0, 0.55)
-                                border.color: Qt.rgba(1, 1, 1, 0.40)
+                                color: (sysProcRef && sysProcRef.screenMirroringEnabled) ? "#007aff" : ccRoot.cardInnerBg
+                                border.color: ccRoot.cardInnerBorder
                                 border.width: 0.5
                                 Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -525,7 +663,7 @@ Item {
                                         text: "Screen\nMirroring"
                                         font.pixelSize: 10
                                         font.weight: Font.Medium
-                                        color: (sysProcRef && sysProcRef.screenMirroringEnabled) ? "#ffffff" : "#1c1c1e"
+                                        color: (sysProcRef && sysProcRef.screenMirroringEnabled) ? "#ffffff" : ccRoot.textPrimary
                                         horizontalAlignment: Text.AlignHCenter
                                         lineHeight: 0.95
                                     }
@@ -548,8 +686,8 @@ Item {
                     width: parent.width
                     height: 56
                     radius: 14
-                    color: Qt.rgba(1.0, 1.0, 1.0, 0.55)
-                    border.color: Qt.rgba(1, 1, 1, 0.40)
+                    color: ccRoot.cardInnerBg
+                    border.color: ccRoot.cardInnerBorder
                     border.width: 0.5
 
                     Column {
@@ -561,7 +699,7 @@ Item {
                             text: "Display"
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
-                            color: "#1c1c1e"
+                            color: ccRoot.textPrimary
                         }
 
                         // Slider Capsule Track
@@ -570,7 +708,7 @@ Item {
                             width: parent.width
                             height: 24
                             radius: 12
-                            color: Qt.rgba(0.20, 0.20, 0.22, 0.18)
+                            color: ccRoot.trackBg
                             clip: true
 
                             property real val: sysProcRef ? sysProcRef.brightness : 0.8
@@ -597,7 +735,7 @@ Item {
                                         anchors.fill: parent
                                         radius: 12
                                         color: "transparent"
-                                        border.color: Qt.rgba(0, 0, 0, 0.12)
+                                        border.color: ccRoot.sliderKnobBorder
                                         border.width: 0.5
                                     }
                                 }
@@ -646,8 +784,8 @@ Item {
                     width: parent.width
                     height: 56
                     radius: 14
-                    color: Qt.rgba(1.0, 1.0, 1.0, 0.55)
-                    border.color: Qt.rgba(1, 1, 1, 0.40)
+                    color: ccRoot.cardInnerBg
+                    border.color: ccRoot.cardInnerBorder
                     border.width: 0.5
 
                     Column {
@@ -659,7 +797,7 @@ Item {
                             text: "Sound"
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
-                            color: "#1c1c1e"
+                            color: ccRoot.textPrimary
                         }
 
                         Row {
@@ -673,7 +811,7 @@ Item {
                                 width: parent.width - 32
                                 height: 24
                                 radius: 12
-                                color: Qt.rgba(0.20, 0.20, 0.22, 0.18)
+                                color: ccRoot.trackBg
                                 clip: true
 
                                 property real volVal: (sysProcRef && !sysProcRef.muted) ? sysProcRef.volume : 0.0
@@ -700,7 +838,7 @@ Item {
                                             anchors.fill: parent
                                             radius: 12
                                             color: "transparent"
-                                            border.color: Qt.rgba(0, 0, 0, 0.12)
+                                            border.color: ccRoot.sliderKnobBorder
                                             border.width: 0.5
                                         }
                                     }
@@ -776,8 +914,8 @@ Item {
                     width: parent.width
                     height: 48
                     radius: 14
-                    color: Qt.rgba(1.0, 1.0, 1.0, 0.55)
-                    border.color: Qt.rgba(1, 1, 1, 0.40)
+                    color: ccRoot.cardInnerBg
+                    border.color: ccRoot.cardInnerBorder
                     border.width: 0.5
 
                     Row {
@@ -806,14 +944,14 @@ Item {
                                 text: (sysProcRef && sysProcRef.mediaTitle !== "") ? sysProcRef.mediaTitle : "Music"
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
-                                color: "#1c1c1e"
+                                color: ccRoot.textPrimary
                                 elide: Text.ElideRight
                                 width: parent.width
                             }
                             Text {
                                 text: (sysProcRef && sysProcRef.mediaArtist !== "") ? sysProcRef.mediaArtist : "Apple Music"
                                 font.pixelSize: 10
-                                color: "#636366"
+                                color: ccRoot.textSecondary
                                 elide: Text.ElideRight
                                 width: parent.width
                             }
@@ -843,7 +981,7 @@ Item {
                                     anchors.centerIn: parent
                                     text: "❚❚"
                                     font.pixelSize: 11
-                                    color: "#1c1c1e"
+                                    color: ccRoot.textPrimary
                                     visible: (sysProcRef && sysProcRef.mediaPlaying)
                                 }
 
@@ -924,14 +1062,14 @@ Item {
                         width: 24
                         height: 24
                         radius: 12
-                        color: backMa.containsMouse ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(0, 0, 0, 0.05)
+                        color: backMa.containsMouse ? ccRoot.rowHoverBg : "transparent"
                         Behavior on color { ColorAnimation { duration: 80 } }
 
                         Text {
                             anchors.centerIn: parent
                             text: "‹"
                             font.pixelSize: 18
-                            color: "#1c1c1e"
+                            color: ccRoot.textPrimary
                         }
 
                         MouseArea {
@@ -950,7 +1088,7 @@ Item {
                         text: "Wi-Fi"
                         font.pixelSize: 13
                         font.weight: Font.DemiBold
-                        color: "#1c1c1e"
+                        color: ccRoot.textPrimary
                     }
 
                     Item {
@@ -966,7 +1104,7 @@ Item {
                         width: 36
                         height: 20
                         radius: 10
-                        color: (sysProcRef && sysProcRef.wifiEnabled) ? "#34c759" : Qt.rgba(0, 0, 0, 0.15)
+                        color: (sysProcRef && sysProcRef.wifiEnabled) ? "#34c759" : (ccRoot.isDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.15))
                         Behavior on color { ColorAnimation { duration: 150 } }
 
                         Rectangle {
@@ -1003,7 +1141,7 @@ Item {
                         anchors.centerIn: parent
                         text: "Wi-Fi is Turned Off"
                         font.pixelSize: 12
-                        color: "#636366"
+                        color: ccRoot.textSecondary
                     }
                 }
 
@@ -1017,7 +1155,7 @@ Item {
                         text: "AVAILABLE NETWORKS"
                         font.pixelSize: 10
                         font.weight: Font.DemiBold
-                        color: "#8e8e93"
+                        color: ccRoot.textTertiary
                         anchors.left: parent.left
                         anchors.leftMargin: 6
                     }
@@ -1031,7 +1169,7 @@ Item {
                             height: 30
                             radius: 8
                             color: netMa.containsPress ? Qt.rgba(0.04, 0.38, 1.0, 0.85)
-                                 : (netMa.containsMouse ? Qt.rgba(0, 0, 0, 0.06) : "transparent")
+                                 : (netMa.containsMouse ? ccRoot.rowHoverBg : "transparent")
                             Behavior on color { ColorAnimation { duration: 60 } }
 
                             Row {
@@ -1052,37 +1190,37 @@ Item {
                                         layer.samples: 4
                                         // Arc 3 (Top)
                                         ShapePath {
-                                            strokeWidth: 1.2
-                                            strokeColor: (modelData.bars >= 3) ? "#1c1c1e" : Qt.rgba(0, 0, 0, 0.20)
-                                            fillColor: "transparent"
-                                            capStyle: ShapePath.RoundCap
-                                            PathAngleArc {
-                                                centerX: 7; centerY: 11
-                                                radiusX: 9; radiusY: 9
-                                                startAngle: -135; sweepAngle: 90
-                                            }
+                                             strokeWidth: 1.2
+                                             strokeColor: (modelData.bars >= 3) ? ccRoot.textPrimary : (ccRoot.isDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.20))
+                                             fillColor: "transparent"
+                                             capStyle: ShapePath.RoundCap
+                                             PathAngleArc {
+                                                 centerX: 7; centerY: 11
+                                                 radiusX: 9; radiusY: 9
+                                                 startAngle: -135; sweepAngle: 90
+                                             }
                                         }
                                         // Arc 2 (Middle)
                                         ShapePath {
-                                            strokeWidth: 1.2
-                                            strokeColor: (modelData.bars >= 2) ? "#1c1c1e" : Qt.rgba(0, 0, 0, 0.20)
-                                            fillColor: "transparent"
-                                            capStyle: ShapePath.RoundCap
-                                            PathAngleArc {
-                                                centerX: 7; centerY: 11
-                                                radiusX: 5.5; radiusY: 5.5
-                                                startAngle: -135; sweepAngle: 90
-                                            }
+                                             strokeWidth: 1.2
+                                             strokeColor: (modelData.bars >= 2) ? ccRoot.textPrimary : (ccRoot.isDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.20))
+                                             fillColor: "transparent"
+                                             capStyle: ShapePath.RoundCap
+                                             PathAngleArc {
+                                                 centerX: 7; centerY: 11
+                                                 radiusX: 5.5; radiusY: 5.5
+                                                 startAngle: -135; sweepAngle: 90
+                                             }
                                         }
                                         // Dot (Bottom)
                                         ShapePath {
-                                            strokeWidth: 0
-                                            fillColor: "#1c1c1e"
-                                            PathAngleArc {
-                                                centerX: 7; centerY: 11
-                                                radiusX: 1.3; radiusY: 1.3
-                                                startAngle: 0; sweepAngle: 360
-                                            }
+                                             strokeWidth: 0
+                                             fillColor: ccRoot.textPrimary
+                                             PathAngleArc {
+                                                 centerX: 7; centerY: 11
+                                                 radiusX: 1.3; radiusY: 1.3
+                                                 startAngle: 0; sweepAngle: 360
+                                             }
                                         }
                                     }
                                 }
@@ -1093,7 +1231,7 @@ Item {
                                     text: modelData.ssid || ""
                                     font.pixelSize: 12
                                     font.weight: modelData.active ? Font.DemiBold : Font.Normal
-                                    color: netMa.containsPress ? "#ffffff" : "#1c1c1e"
+                                    color: netMa.containsPress ? "#ffffff" : ccRoot.textPrimary
                                     elide: Text.ElideRight
                                     width: parent.width - 70
                                 }
@@ -1103,7 +1241,7 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: modelData.secured ? "🔒" : ""
                                     font.pixelSize: 10
-                                    color: "#636366"
+                                    color: ccRoot.textSecondary
                                     visible: !!modelData.secured
                                 }
 
@@ -1135,7 +1273,7 @@ Item {
                 Rectangle {
                     width: parent.width
                     height: 0.5
-                    color: Qt.rgba(0, 0, 0, 0.10)
+                    color: ccRoot.separatorColor
                 }
 
                 // Wi-Fi Settings Link Item
@@ -1143,7 +1281,7 @@ Item {
                     width: parent.width
                     height: 26
                     radius: 6
-                    color: settingsMa.containsMouse ? Qt.rgba(0, 0, 0, 0.06) : "transparent"
+                    color: settingsMa.containsMouse ? ccRoot.rowHoverBg : "transparent"
                     Behavior on color { ColorAnimation { duration: 60 } }
 
                     Text {
@@ -1153,7 +1291,7 @@ Item {
                         text: "Wi-Fi Settings..."
                         font.pixelSize: 11
                         font.weight: Font.Medium
-                        color: "#1c1c1e"
+                        color: ccRoot.textPrimary
                     }
 
                     MouseArea {

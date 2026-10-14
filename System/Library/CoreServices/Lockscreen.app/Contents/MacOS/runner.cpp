@@ -11,6 +11,7 @@
 #include <QDir>
 #include <memory>
 
+#include <unistd.h>
 #include <QFontDatabase>
 #include <LayerShellQt/Shell>
 #include <LayerShellQt/Window>
@@ -27,7 +28,8 @@ int main(int argc, char **argv) {
         qputenv("WAYLAND_DISPLAY", "wayland-1");
     }
     if (qEnvironmentVariableIsEmpty("XDG_RUNTIME_DIR")) {
-        qputenv("XDG_RUNTIME_DIR", "/run/user/1000");
+        QByteArray runtimeDir = "/run/user/" + QByteArray::number(getuid());
+        qputenv("XDG_RUNTIME_DIR", runtimeDir);
     }
 
     bool layer = false;
@@ -78,8 +80,8 @@ int main(int argc, char **argv) {
         qputenv("QT_WAYLAND_SHELL_INTEGRATION", "xdg-shell");
     }
     QGuiApplication app(argc, argv);
-    QFontDatabase::addApplicationFont(QStringLiteral("/home/gg/SwiftDE/System/Library/Fonts/SF-Symbols-6.otf"));
-    QFontDatabase::addApplicationFont(QStringLiteral("/home/gg/SwiftDE/Library/Fonts/SF-Symbols-6.otf"));
+    QFontDatabase::addApplicationFont(ProcessRunner::getSwiftDEPath(QStringLiteral("/System/Library/Fonts/SF-Symbols-6.otf")));
+    QFontDatabase::addApplicationFont(ProcessRunner::getSwiftDEPath(QStringLiteral("/Library/Fonts/SF-Symbols-6.otf")));
     app.setApplicationName(QStringLiteral("Finder"));
     app.setDesktopFileName(QStringLiteral("com.apple.finder"));
     qmlRegisterType<ProcessRunner>("SwiftDE", 1, 0, "SysProc");

@@ -23,6 +23,18 @@ ApplicationWindow {
     property string dockPosition: (sysProc.dockSettings && sysProc.dockSettings.position) ? sysProc.dockSettings.position : "bottom"
     property string minimizeEffect: "genie"
 
+    readonly property bool isDark: sysProc.isDark
+
+    // Theme colors for Light & Dark mode
+    readonly property color menuBgColor: isDark ? Qt.rgba(0.16, 0.16, 0.18, 0.88) : Qt.rgba(0.94, 0.94, 0.93, 0.88)
+    readonly property color menuBorderColor: isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.14)
+    readonly property color menuInnerHighlight: isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.65)
+    readonly property color menuTextColor: isDark ? "#f5f5f7" : "#1d1d1f"
+    readonly property color menuSeparatorColor: isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+    readonly property color tooltipBgColor: isDark ? Qt.rgba(0.18, 0.18, 0.20, 0.92) : Qt.rgba(0.96, 0.96, 0.96, 0.92)
+    readonly property color tooltipBorderColor: isDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.16)
+    readonly property color tooltipTextColor: isDark ? "#f5f5f7" : "#1d1d1f"
+
     // Magnification tracking: buttery smooth entry animation and cursor gliding
     property bool isMouseInDock: false
     readonly property bool isMagnifying: magnificationEnabled && isMouseInDock && !draggingItem && !contextMenuOpen && !separatorMenuOpen
@@ -75,7 +87,7 @@ ApplicationWindow {
     // Pinned Applications (Finder is ALWAYS #1 and cannot be unpinned)
     property var dockItems: [
         { id: "finder", name: "Finder", icon: "Finder.png", isRunning: true, canUnpin: false, command: "nautilus ~ || xdg-open ~ || true" },
-        { id: "launchpad", name: "Launchpad", icon: "Launchpad.png", isRunning: false, canUnpin: true, command: "env LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl /home/gg/SwiftDE/SwiftDE-RunQML --layer /home/gg/SwiftDE/System/Library/CoreServices/Launchpad.app/Contents/Resources/Launchpad.qml" },
+        { id: "launchpad", name: "Launchpad", icon: "Launchpad.png", isRunning: false, canUnpin: true, command: "launchpad" },
         { id: "safari", name: "Safari", icon: "Safari.png", isRunning: false, canUnpin: true, command: "google-chrome || chromium || firefox || true" },
         { id: "messages", name: "Messages", icon: "Messages.png", isRunning: false, canUnpin: true, command: "telegram-desktop || true" },
         { id: "mail", name: "Mail", icon: "Mail.png", isRunning: false, canUnpin: true, command: "thunderbird || true" },
@@ -135,16 +147,7 @@ ApplicationWindow {
         if (!item) return
         closeAllMenus()
         if (item.id === "launchpad") {
-            console.log("Executing Launchpad toggle...")
-            try {
-                if (typeof sysProc.toggleLaunchpad === "function") {
-                    sysProc.toggleLaunchpad()
-                    return
-                }
-            } catch (e) {
-                console.log("toggleLaunchpad threw:", e)
-            }
-            sysProc.launch("pkill -f Launchpad.qml || env WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl /home/gg/SwiftDE/SwiftDE-RunQML --layer /home/gg/SwiftDE/System/Library/CoreServices/Launchpad.app/Contents/Resources/Launchpad.qml")
+            sysProc.toggleLaunchpad()
             return
         }
         if (item.command) {
@@ -271,8 +274,8 @@ ApplicationWindow {
         Rectangle {
             anchors.fill: parent
             radius: 19
-            color: Qt.rgba(0.92, 0.92, 0.94, 0.30)
-            border.color: Qt.rgba(0, 0, 0, 0.12)
+            color: dockWindow.isDark ? Qt.rgba(0.12, 0.12, 0.14, 0.50) : Qt.rgba(0.92, 0.92, 0.94, 0.30)
+            border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.12)
             border.width: 0.5
 
             // Specular inner light reflection
@@ -281,7 +284,7 @@ ApplicationWindow {
                 anchors.margins: 0.5
                 radius: 18.5
                 color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, 0.45)
+                border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.45)
                 border.width: 0.5
             }
 
@@ -291,7 +294,7 @@ ApplicationWindow {
                 anchors.margins: -1
                 radius: 20
                 color: "transparent"
-                border.color: Qt.rgba(0, 0, 0, 0.08)
+                border.color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(0, 0, 0, 0.08)
                 border.width: 1
                 z: -1
             }
@@ -527,9 +530,9 @@ ApplicationWindow {
                             layer.samples: 4
 
                             ShapePath {
-                                strokeColor: Qt.rgba(0, 0, 0, 0.16)
+                                strokeColor: dockWindow.tooltipBorderColor
                                 strokeWidth: 0.6
-                                fillColor: Qt.rgba(0.96, 0.96, 0.96, 0.92)
+                                fillColor: dockWindow.tooltipBgColor
                                 capStyle: ShapePath.RoundCap
                                 joinStyle: ShapePath.RoundJoin
 
@@ -592,7 +595,7 @@ ApplicationWindow {
                             font.family: sfMedium.name
                             font.weight: Font.Medium
                             font.pixelSize: 12
-                            color: "#1d1d1f"
+                            color: dockWindow.tooltipTextColor
                         }
                     }
                 }
@@ -786,9 +789,9 @@ ApplicationWindow {
                             layer.samples: 4
 
                             ShapePath {
-                                strokeColor: Qt.rgba(0, 0, 0, 0.16)
+                                strokeColor: dockWindow.tooltipBorderColor
                                 strokeWidth: 0.6
-                                fillColor: Qt.rgba(0.96, 0.96, 0.96, 0.92)
+                                fillColor: dockWindow.tooltipBgColor
                                 capStyle: ShapePath.RoundCap
                                 joinStyle: ShapePath.RoundJoin
 
@@ -851,7 +854,7 @@ ApplicationWindow {
                             font.family: sfMedium.name
                             font.weight: Font.Medium
                             font.pixelSize: 12
-                            color: "#1d1d1f"
+                            color: dockWindow.tooltipTextColor
                         }
                     }
                 }
@@ -949,8 +952,8 @@ ApplicationWindow {
         Rectangle {
             anchors.fill: parent
             radius: 8
-            color: Qt.rgba(0.94, 0.94, 0.93, 0.88)
-            border.color: Qt.rgba(0, 0, 0, 0.14)
+            color: dockWindow.menuBgColor
+            border.color: dockWindow.menuBorderColor
             border.width: 0.6
 
             Rectangle {
@@ -958,7 +961,7 @@ ApplicationWindow {
                 anchors.margins: 0.6
                 radius: 7.4
                 color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, 0.65)
+                border.color: dockWindow.menuInnerHighlight
                 border.width: 0.6
             }
         }
@@ -972,9 +975,9 @@ ApplicationWindow {
             height: 7
 
             ShapePath {
-                strokeColor: Qt.rgba(0, 0, 0, 0.14)
+                strokeColor: dockWindow.menuBorderColor
                 strokeWidth: 0.6
-                fillColor: Qt.rgba(0.94, 0.94, 0.93, 0.88)
+                fillColor: dockWindow.menuBgColor
                 startX: 0; startY: 0
                 PathLine { x: 7; y: 7 }
                 PathLine { x: 14; y: 0 }
@@ -1000,7 +1003,7 @@ ApplicationWindow {
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "New Finder Window"; font.family: sfMedium.name; font.pixelSize: 13
-                        color: finderMa1.containsMouse ? "#ffffff" : "#1d1d1f"
+                        color: finderMa1.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: finderMa1; anchors.fill: parent; hoverEnabled: true
@@ -1020,12 +1023,12 @@ ApplicationWindow {
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "Options"; font.family: sfMedium.name; font.pixelSize: 13
-                        color: (optMa.containsMouse || dockWindow.showOptionsSubmenu) ? "#ffffff" : "#1d1d1f"
+                        color: (optMa.containsMouse || dockWindow.showOptionsSubmenu) ? "#ffffff" : dockWindow.menuTextColor
                     }
                     Text {
                         anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "›"; font.family: sfMedium.name; font.pixelSize: 15; font.weight: Font.DemiBold
-                        color: (optMa.containsMouse || dockWindow.showOptionsSubmenu) ? "#ffffff" : "#1d1d1f"
+                        color: (optMa.containsMouse || dockWindow.showOptionsSubmenu) ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: optMa; anchors.fill: parent; hoverEnabled: true
@@ -1041,7 +1044,7 @@ ApplicationWindow {
                 height: 7
                 Rectangle {
                     anchors.centerIn: parent; width: parent.width - 24; height: 0.8
-                    color: Qt.rgba(0, 0, 0, 0.08)
+                    color: dockWindow.menuSeparatorColor
                 }
             }
 
@@ -1055,7 +1058,7 @@ ApplicationWindow {
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "Open"; font.family: sfMedium.name; font.pixelSize: 13
-                        color: openMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                        color: openMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: openMa; anchors.fill: parent; hoverEnabled: true
@@ -1079,7 +1082,7 @@ ApplicationWindow {
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "Quit"; font.family: sfMedium.name; font.pixelSize: 13
-                        color: quitMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                        color: quitMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: quitMa; anchors.fill: parent; hoverEnabled: true
@@ -1102,13 +1105,13 @@ ApplicationWindow {
             Rectangle {
                 anchors.fill: parent
                 radius: 8
-                color: Qt.rgba(0.94, 0.94, 0.93, 0.88)
-                border.color: Qt.rgba(0, 0, 0, 0.14)
+                color: dockWindow.menuBgColor
+                border.color: dockWindow.menuBorderColor
                 border.width: 0.6
 
                 Rectangle {
                     anchors.fill: parent; anchors.margins: 0.6; radius: 7.4
-                    color: "transparent"; border.color: Qt.rgba(1, 1, 1, 0.65); border.width: 0.6
+                    color: "transparent"; border.color: dockWindow.menuInnerHighlight; border.width: 0.6
                 }
             }
 
@@ -1126,7 +1129,7 @@ ApplicationWindow {
                         Text {
                             anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                             text: "Remove from Dock"; font.family: sfMedium.name; font.pixelSize: 13
-                            color: remMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: remMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: remMa; anchors.fill: parent; hoverEnabled: true
@@ -1147,7 +1150,7 @@ ApplicationWindow {
                         Text {
                             anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                             text: "Open at Login"; font.family: sfMedium.name; font.pixelSize: 13
-                            color: loginMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: loginMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: loginMa; anchors.fill: parent; hoverEnabled: true
@@ -1166,7 +1169,7 @@ ApplicationWindow {
                         Text {
                             anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                             text: "Show in Finder"; font.family: sfMedium.name; font.pixelSize: 13
-                            color: showFinderMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: showFinderMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: showFinderMa; anchors.fill: parent; hoverEnabled: true
@@ -1196,13 +1199,13 @@ ApplicationWindow {
         Rectangle {
             anchors.fill: parent
             radius: 8
-            color: Qt.rgba(0.94, 0.94, 0.93, 0.88)
-            border.color: Qt.rgba(0, 0, 0, 0.14)
+            color: dockWindow.menuBgColor
+            border.color: dockWindow.menuBorderColor
             border.width: 0.6
 
             Rectangle {
                 anchors.fill: parent; anchors.margins: 0.6; radius: 7.4
-                color: "transparent"; border.color: Qt.rgba(1, 1, 1, 0.65); border.width: 0.6
+                color: "transparent"; border.color: dockWindow.menuInnerHighlight; border.width: 0.6
             }
         }
 
@@ -1215,9 +1218,9 @@ ApplicationWindow {
             height: 7
 
             ShapePath {
-                strokeColor: Qt.rgba(0, 0, 0, 0.14)
+                strokeColor: dockWindow.menuBorderColor
                 strokeWidth: 0.6
-                fillColor: Qt.rgba(0.94, 0.94, 0.93, 0.88)
+                fillColor: dockWindow.menuBgColor
                 startX: 0; startY: 0
                 PathLine { x: 7; y: 7 }
                 PathLine { x: 14; y: 0 }
@@ -1240,7 +1243,7 @@ ApplicationWindow {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: dockWindow.autoHideEnabled ? "Turn Hiding Off" : "Turn Hiding On"
                         font.family: sfMedium.name; font.pixelSize: 13
-                        color: hideMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                        color: hideMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: hideMa; anchors.fill: parent; hoverEnabled: true
@@ -1265,7 +1268,7 @@ ApplicationWindow {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: dockWindow.magnificationEnabled ? "Turn Magnification Off" : "Turn Magnification On"
                         font.family: sfMedium.name; font.pixelSize: 13
-                        color: magMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                        color: magMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: magMa; anchors.fill: parent; hoverEnabled: true
@@ -1288,12 +1291,12 @@ ApplicationWindow {
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "Position on Screen"; font.family: sfMedium.name; font.pixelSize: 13
-                        color: (posMa.containsMouse || dockWindow.showPositionSubmenu) ? "#ffffff" : "#1d1d1f"
+                        color: (posMa.containsMouse || dockWindow.showPositionSubmenu) ? "#ffffff" : dockWindow.menuTextColor
                     }
                     Text {
                         anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "›"; font.family: sfMedium.name; font.pixelSize: 15; font.weight: Font.DemiBold
-                        color: (posMa.containsMouse || dockWindow.showPositionSubmenu) ? "#ffffff" : "#1d1d1f"
+                        color: (posMa.containsMouse || dockWindow.showPositionSubmenu) ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: posMa; anchors.fill: parent; hoverEnabled: true
@@ -1312,12 +1315,12 @@ ApplicationWindow {
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "Minimise Using"; font.family: sfMedium.name; font.pixelSize: 13
-                        color: (minMa.containsMouse || dockWindow.showMinimiseSubmenu) ? "#ffffff" : "#1d1d1f"
+                        color: (minMa.containsMouse || dockWindow.showMinimiseSubmenu) ? "#ffffff" : dockWindow.menuTextColor
                     }
                     Text {
                         anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "›"; font.family: sfMedium.name; font.pixelSize: 15; font.weight: Font.DemiBold
-                        color: (minMa.containsMouse || dockWindow.showMinimiseSubmenu) ? "#ffffff" : "#1d1d1f"
+                        color: (minMa.containsMouse || dockWindow.showMinimiseSubmenu) ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: minMa; anchors.fill: parent; hoverEnabled: true
@@ -1332,7 +1335,7 @@ ApplicationWindow {
                 height: 7
                 Rectangle {
                     anchors.centerIn: parent; width: parent.width - 24; height: 0.8
-                    color: Qt.rgba(0, 0, 0, 0.08)
+                    color: dockWindow.menuSeparatorColor
                 }
             }
 
@@ -1346,13 +1349,13 @@ ApplicationWindow {
                     Text {
                         anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
                         text: "Dock Settings..."; font.family: sfMedium.name; font.pixelSize: 13
-                        color: setMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                        color: setMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                     }
                     MouseArea {
                         id: setMa; anchors.fill: parent; hoverEnabled: true
                         onEntered: { dockWindow.showPositionSubmenu = false; dockWindow.showMinimiseSubmenu = false }
                         onClicked: {
-                            sysProc.launch("gnome-control-center || true")
+                            sysProc.openSystemSettings("dock")
                             dockWindow.closeAllMenus()
                         }
                     }
@@ -1372,13 +1375,13 @@ ApplicationWindow {
             Rectangle {
                 anchors.fill: parent
                 radius: 8
-                color: Qt.rgba(0.94, 0.94, 0.93, 0.88)
-                border.color: Qt.rgba(0, 0, 0, 0.14)
+                color: dockWindow.menuBgColor
+                border.color: dockWindow.menuBorderColor
                 border.width: 0.6
 
                 Rectangle {
                     anchors.fill: parent; anchors.margins: 0.6; radius: 7.4
-                    color: "transparent"; border.color: Qt.rgba(1, 1, 1, 0.65); border.width: 0.6
+                    color: "transparent"; border.color: dockWindow.menuInnerHighlight; border.width: 0.6
                 }
             }
 
@@ -1395,7 +1398,7 @@ ApplicationWindow {
                             anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter
                             text: (dockWindow.dockPosition === "left" ? "✓ " : "  ") + "Left"
                             font.family: sfMedium.name; font.pixelSize: 13
-                            color: posLeftMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: posLeftMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: posLeftMa; anchors.fill: parent; hoverEnabled: true
@@ -1413,7 +1416,7 @@ ApplicationWindow {
                             anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter
                             text: (dockWindow.dockPosition === "bottom" ? "✓ " : "  ") + "Bottom"
                             font.family: sfMedium.name; font.pixelSize: 13
-                            color: posBotMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: posBotMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: posBotMa; anchors.fill: parent; hoverEnabled: true
@@ -1431,7 +1434,7 @@ ApplicationWindow {
                             anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter
                             text: (dockWindow.dockPosition === "right" ? "✓ " : "  ") + "Right"
                             font.family: sfMedium.name; font.pixelSize: 13
-                            color: posRightMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: posRightMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: posRightMa; anchors.fill: parent; hoverEnabled: true
@@ -1454,13 +1457,13 @@ ApplicationWindow {
             Rectangle {
                 anchors.fill: parent
                 radius: 8
-                color: Qt.rgba(0.94, 0.94, 0.93, 0.88)
-                border.color: Qt.rgba(0, 0, 0, 0.14)
+                color: dockWindow.menuBgColor
+                border.color: dockWindow.menuBorderColor
                 border.width: 0.6
 
                 Rectangle {
                     anchors.fill: parent; anchors.margins: 0.6; radius: 7.4
-                    color: "transparent"; border.color: Qt.rgba(1, 1, 1, 0.65); border.width: 0.6
+                    color: "transparent"; border.color: dockWindow.menuInnerHighlight; border.width: 0.6
                 }
             }
 
@@ -1477,7 +1480,7 @@ ApplicationWindow {
                             anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter
                             text: (dockWindow.minimizeEffect === "genie" ? "✓ " : "  ") + "Genie Effect"
                             font.family: sfMedium.name; font.pixelSize: 13
-                            color: genieMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: genieMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: genieMa; anchors.fill: parent; hoverEnabled: true
@@ -1495,7 +1498,7 @@ ApplicationWindow {
                             anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter
                             text: (dockWindow.minimizeEffect === "scale" ? "✓ " : "  ") + "Scale Effect"
                             font.family: sfMedium.name; font.pixelSize: 13
-                            color: scaleEffMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: scaleEffMa.containsMouse ? "#ffffff" : dockWindow.menuTextColor
                         }
                         MouseArea {
                             id: scaleEffMa; anchors.fill: parent; hoverEnabled: true

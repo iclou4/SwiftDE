@@ -61,7 +61,7 @@ Window {
         } else if (action === "wallpaper") {
             sysProc.launch("gnome-control-center background || gnome-control-center || true")
         } else if (action === "get_info") {
-            sysProc.launch("/home/gg/SwiftDE/SwiftDE-RunQML /home/gg/SwiftDE/System/Library/CoreServices/AboutThisMac.app/Contents/Resources/AboutThisMac.qml || true")
+            sysProc.launchAboutThisMac()
         }
     }
 

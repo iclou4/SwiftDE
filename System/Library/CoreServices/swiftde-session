@@ -8,7 +8,7 @@ export QSG_RHI_BACKEND=opengl
 export MOZ_ENABLE_WAYLAND=1
 export XCURSOR_THEME=SwiftDE
 export XCURSOR_SIZE=24
-export XCURSOR_PATH=/home/gg/.icons:/usr/share/icons
+export XCURSOR_PATH="$HOME/.icons:/usr/share/icons"
 
 export GSK_RENDERER=gl
 export XDG_SESSION_TYPE=wayland
@@ -17,7 +17,8 @@ export XDG_SESSION_TYPE=wayland
 dbus-update-activation-environment --systemd --all 2>/dev/null || true
 systemctl --user import-environment 2>/dev/null || true
 
-/usr/local/bin/wayfire -c "$HOME/SwiftDE/System/Library/Preferences/swiftde.ini"
+SWIFTDE_DIR="${SWIFTDE_ROOT:-$HOME/SwiftDE}"
+/usr/local/bin/wayfire -c "$SWIFTDE_DIR/System/Library/Preferences/swiftde.ini"
 
 # When session ends (logout), restart GDM to cleanly autologin into the lock screen
 sudo systemctl restart gdm3

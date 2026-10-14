@@ -34,12 +34,18 @@ class ProcessRunner : public QObject {
     Q_PROPERTY(QString wallpaperOptions READ wallpaperOptions NOTIFY wallpaperOptionsChanged)
     Q_PROPERTY(QString wallpaperColor READ wallpaperColor NOTIFY wallpaperColorChanged)
     Q_PROPERTY(QString colorScheme READ colorScheme WRITE setColorScheme NOTIFY colorSchemeChanged)
+    Q_PROPERTY(bool isDark READ isDark NOTIFY colorSchemeChanged)
     Q_PROPERTY(QString accentColor READ accentColor WRITE setAccentColor NOTIFY accentColorChanged)
     Q_PROPERTY(QJsonObject dockSettings READ dockSettings NOTIFY dockSettingsChanged)
-    Q_PROPERTY(QStringList runningApps READ runningApps NOTIFY runningAppsChanged)
+    Q_PROPERTY(QString homePath READ homePath CONSTANT)
+    Q_PROPERTY(QString swiftdePath READ swiftdePath CONSTANT)
 
 public:
     explicit ProcessRunner(QObject *parent = nullptr);
+
+    QString homePath() const;
+    QString swiftdePath() const;
+    static QString getSwiftDEPath(const QString &relPath = QString());
 
     QString activeAppName() const { return m_activeAppName; }
     QString activeAppTitle() const { return m_activeAppTitle; }
@@ -119,6 +125,7 @@ public:
     QString wallpaperOptions() const { return m_wallpaperOptions; }
     QString wallpaperColor() const { return m_wallpaperColor; }
     QString colorScheme() const { return m_colorScheme; }
+    bool isDark() const { return m_colorScheme == QStringLiteral("prefer-dark") || m_colorScheme == QStringLiteral("dark") || m_isDark; }
     Q_INVOKABLE void setColorScheme(const QString &scheme);
     QString accentColor() const { return m_accentColor; }
     Q_INVOKABLE void setAccentColor(const QString &color);
@@ -182,9 +189,11 @@ private:
     QString m_wallpaperOptions = QStringLiteral("zoom");
     QString m_wallpaperColor = QStringLiteral("#000000");
     QString m_colorScheme = QStringLiteral("default");
+    bool m_isDark = false;
     QString m_accentColor = QStringLiteral("#007aff");
     QJsonObject m_dockSettings;
     class QProcess *m_wallpaperMonitor = nullptr;
+    class QProcess *m_interfaceMonitor = nullptr;
     void startWallpaperMonitor();
     void loadDockSettings();
 

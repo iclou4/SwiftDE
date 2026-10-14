@@ -20,6 +20,26 @@
 #include <QFileInfo>
 #include <QDir>
 
+QString ProcessRunner::homePath() const {
+    return QDir::homePath();
+}
+
+QString ProcessRunner::swiftdePath() const {
+    return getSwiftDEPath();
+}
+
+QString ProcessRunner::getSwiftDEPath(const QString &relPath) {
+    QString envRoot = qEnvironmentVariable("SWIFTDE_ROOT");
+    if (!envRoot.isEmpty() && QDir(envRoot).exists()) {
+        return envRoot + relPath;
+    }
+    QString home = QDir::homePath();
+    if (QDir(home + QStringLiteral("/SwiftDE")).exists()) {
+        return home + QStringLiteral("/SwiftDE") + relPath;
+    }
+    return QStringLiteral("/usr/local/share/SwiftDE") + relPath;
+}
+
 ProcessRunner::ProcessRunner(QObject *parent) : QObject(parent) {
     // Ensure DBUS_SESSION_BUS_ADDRESS is present for gsettings/dconf
     if (qgetenv("DBUS_SESSION_BUS_ADDRESS").isEmpty()) {
@@ -115,13 +135,13 @@ void ProcessRunner::launchAboutThisMac() {
     env.insert(QStringLiteral("QSG_RHI_BACKEND"), QStringLiteral("opengl"));
     env.insert(QStringLiteral("XDG_CURRENT_DESKTOP"), QStringLiteral("GNOME:Unity:SwiftDE"));
     proc->setProcessEnvironment(env);
-    proc->startDetached(QStringLiteral("/home/gg/SwiftDE/SwiftDE-RunQML"), {QStringLiteral("/home/gg/SwiftDE/System/Library/CoreServices/AboutThisMac.app/Contents/Resources/AboutThisMac.qml")});
+    proc->startDetached(getSwiftDEPath(QStringLiteral("/SwiftDE-RunQML")), {getSwiftDEPath(QStringLiteral("/System/Library/CoreServices/AboutThisMac.app/Contents/Resources/AboutThisMac.qml"))});
 }
 
 void ProcessRunner::lockScreen() {
     QProcess::startDetached(QStringLiteral("/bin/sh"), {
         QStringLiteral("-c"),
-        QStringLiteral("exec env LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl /home/gg/SwiftDE/SwiftDE-RunQML --layer /home/gg/SwiftDE/System/Library/CoreServices/Lockscreen.app/Contents/Resources/Lockscreen.qml")
+        QString("exec env LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl %1/SwiftDE-RunQML --layer %1/System/Library/CoreServices/Lockscreen.app/Contents/Resources/Lockscreen.qml").arg(getSwiftDEPath())
     });
 }
 
@@ -856,7 +876,8 @@ void ProcessRunner::refreshWallpaper() {
         }
     }
 
-    // Check color scheme
+    // Check color scheme from GNOME interface settings
+    bool schemeChanged = false;
     QProcess procScheme;
     procScheme.setProcessEnvironment(env);
     procScheme.start(QStringLiteral("gsettings"), {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("color-scheme")});
@@ -865,15 +886,38 @@ void ProcessRunner::refreshWallpaper() {
         scheme.remove('\'');
         if (!scheme.isEmpty() && scheme != m_colorScheme) {
             m_colorScheme = scheme;
-            emit colorSchemeChanged();
+            schemeChanged = true;
         }
     }
 
+    // Also check GTK theme for dark mode indicator
+    bool dark = (m_colorScheme == QStringLiteral("prefer-dark") || m_colorScheme == QStringLiteral("dark"));
+    if (!dark) {
+        QProcess procGtk;
+        procGtk.setProcessEnvironment(env);
+        procGtk.start(QStringLiteral("gsettings"), {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("gtk-theme")});
+        if (procGtk.waitForFinished(300)) {
+            QString gtkTheme = QString::fromUtf8(procGtk.readAllStandardOutput()).trimmed();
+            if (gtkTheme.contains(QStringLiteral("dark"), Qt::CaseInsensitive)) {
+                dark = true;
+            }
+        }
+    }
+    if (m_isDark != dark) {
+        m_isDark = dark;
+        schemeChanged = true;
+    }
+    if (schemeChanged) {
+        emit colorSchemeChanged();
+    }
+
     // Check wallpaper URI
-    QString key = (m_colorScheme == QStringLiteral("prefer-dark")) ? QStringLiteral("picture-uri-dark") : QStringLiteral("picture-uri");
+    QString primaryKey = m_isDark ? QStringLiteral("picture-uri-dark") : QStringLiteral("picture-uri");
+    QString fallbackKey = m_isDark ? QStringLiteral("picture-uri") : QStringLiteral("picture-uri-dark");
+
     QProcess procUri;
     procUri.setProcessEnvironment(env);
-    procUri.start(QStringLiteral("gsettings"), {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.background"), key});
+    procUri.start(QStringLiteral("gsettings"), {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.background"), primaryKey});
     QString uri;
     if (procUri.waitForFinished(300)) {
         uri = QString::fromUtf8(procUri.readAllStandardOutput()).trimmed();
@@ -881,17 +925,19 @@ void ProcessRunner::refreshWallpaper() {
     }
 
     if (uri.isEmpty() || uri == QStringLiteral("none")) {
-        QProcess procUriLight;
-        procUriLight.setProcessEnvironment(env);
-        procUriLight.start(QStringLiteral("gsettings"), {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.background"), QStringLiteral("picture-uri")});
-        if (procUriLight.waitForFinished(300)) {
-            uri = QString::fromUtf8(procUriLight.readAllStandardOutput()).trimmed();
+        QProcess procFallback;
+        procFallback.setProcessEnvironment(env);
+        procFallback.start(QStringLiteral("gsettings"), {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.background"), fallbackKey});
+        if (procFallback.waitForFinished(300)) {
+            uri = QString::fromUtf8(procFallback.readAllStandardOutput()).trimmed();
             uri.remove('\'');
         }
     }
 
     if (uri.isEmpty() || uri == QStringLiteral("none")) {
-        uri = QStringLiteral("file:///home/gg/SwiftDE/Library/DesktopPictures/Wallpaper.jpg");
+        uri = QStringLiteral("file://") + getSwiftDEPath(QStringLiteral("/Library/DesktopPictures/Wallpaper.jpg"));
+    } else if (!uri.startsWith(QStringLiteral("file://")) && uri.startsWith(QStringLiteral("/"))) {
+        uri = QStringLiteral("file://") + uri;
     }
 
     if (uri != m_wallpaperUrl) {
@@ -916,8 +962,6 @@ void ProcessRunner::pollWallpaper() {
 }
 
 void ProcessRunner::startWallpaperMonitor() {
-    if (m_wallpaperMonitor) return;
-    m_wallpaperMonitor = new QProcess(this);
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     if (env.value(QStringLiteral("DBUS_SESSION_BUS_ADDRESS")).isEmpty()) {
         QString bus = QStringLiteral("/run/user/%1/bus").arg(getuid());
@@ -925,15 +969,34 @@ void ProcessRunner::startWallpaperMonitor() {
             env.insert(QStringLiteral("DBUS_SESSION_BUS_ADDRESS"), QStringLiteral("unix:path=") + bus);
         }
     }
-    m_wallpaperMonitor->setProcessEnvironment(env);
-    connect(m_wallpaperMonitor, &QProcess::readyReadStandardOutput, this, [this]() {
-        refreshWallpaper();
-    });
-    connect(m_wallpaperMonitor, &QProcess::finished, this, [this]() {
-        m_wallpaperMonitor = nullptr;
-        QTimer::singleShot(2000, this, &ProcessRunner::startWallpaperMonitor);
-    });
-    m_wallpaperMonitor->start(QStringLiteral("gsettings"), {QStringLiteral("monitor"), QStringLiteral("org.gnome.desktop.background")});
+
+    // Monitor wallpaper changes
+    if (!m_wallpaperMonitor) {
+        m_wallpaperMonitor = new QProcess(this);
+        m_wallpaperMonitor->setProcessEnvironment(env);
+        connect(m_wallpaperMonitor, &QProcess::readyReadStandardOutput, this, [this]() {
+            refreshWallpaper();
+        });
+        connect(m_wallpaperMonitor, &QProcess::finished, this, [this]() {
+            m_wallpaperMonitor = nullptr;
+            QTimer::singleShot(2000, this, &ProcessRunner::startWallpaperMonitor);
+        });
+        m_wallpaperMonitor->start(QStringLiteral("gsettings"), {QStringLiteral("monitor"), QStringLiteral("org.gnome.desktop.background")});
+    }
+
+    // Monitor interface changes (dark/light mode, gtk-theme)
+    if (!m_interfaceMonitor) {
+        m_interfaceMonitor = new QProcess(this);
+        m_interfaceMonitor->setProcessEnvironment(env);
+        connect(m_interfaceMonitor, &QProcess::readyReadStandardOutput, this, [this]() {
+            refreshWallpaper();
+        });
+        connect(m_interfaceMonitor, &QProcess::finished, this, [this]() {
+            m_interfaceMonitor = nullptr;
+            QTimer::singleShot(2000, this, &ProcessRunner::startWallpaperMonitor);
+        });
+        m_interfaceMonitor->start(QStringLiteral("gsettings"), {QStringLiteral("monitor"), QStringLiteral("org.gnome.desktop.interface")});
+    }
 }
 
 void ProcessRunner::setWallpaper(const QString &url, const QString &name) {
@@ -944,23 +1007,28 @@ void ProcessRunner::setWallpaper(const QString &url, const QString &name) {
     emit wallpaperNameChanged();
 
     QString cleanUrl = url;
-    if (!cleanUrl.startsWith(QStringLiteral("file://")) && cleanUrl.startsWith(QStringLiteral("/"))) {
-        cleanUrl = QStringLiteral("file://") + cleanUrl;
+    if (!cleanUrl.startsWith(QStringLiteral("file://"))) {
+        if (cleanUrl.startsWith(QStringLiteral("/"))) {
+            cleanUrl = QStringLiteral("file://") + cleanUrl;
+        } else {
+            cleanUrl = QStringLiteral("file://") + getSwiftDEPath(QStringLiteral("/") + cleanUrl);
+        }
     }
     QString localFile = QUrl(cleanUrl).toLocalFile();
 
     QString cmd = QStringLiteral(
         "gsettings set org.gnome.desktop.background picture-uri \"%1\"; "
         "gsettings set org.gnome.desktop.background picture-uri-dark \"%1\"; "
-        "mkdir -p /home/gg/SwiftDE/Library/DesktopPictures; "
-        "if [ -f \"%2\" ]; then cp -f \"%2\" /home/gg/SwiftDE/Library/DesktopPictures/Wallpaper.jpg 2>/dev/null || true; fi"
-    ).arg(cleanUrl, localFile);
+        "mkdir -p \"%3/Library/DesktopPictures\"; "
+        "if [ -f \"%2\" ]; then cp -f \"%2\" \"%3/Library/DesktopPictures/Wallpaper.jpg\" 2>/dev/null || true; fi"
+    ).arg(cleanUrl, localFile, getSwiftDEPath());
 
     QProcess::startDetached(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), cmd});
 }
 
 void ProcessRunner::setColorScheme(const QString &scheme) {
     m_colorScheme = scheme;
+    m_isDark = (scheme == QStringLiteral("prefer-dark") || scheme == QStringLiteral("dark"));
     emit colorSchemeChanged();
     QString cmd = QStringLiteral("gsettings set org.gnome.desktop.interface color-scheme \"%1\"").arg(scheme);
     QProcess::startDetached(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), cmd});
@@ -981,11 +1049,11 @@ void ProcessRunner::openSystemSettings(const QString &tab) {
     env.insert(QStringLiteral("QSG_RHI_BACKEND"), QStringLiteral("opengl"));
     env.insert(QStringLiteral("XDG_CURRENT_DESKTOP"), QStringLiteral("GNOME:Unity:SwiftDE"));
     proc->setProcessEnvironment(env);
-    QString qmlPath = QStringLiteral("/home/gg/SwiftDE/System/Library/CoreServices/SystemSettings.app/Contents/Resources/SystemSettings.qml");
+    QString qmlPath = getSwiftDEPath(QStringLiteral("/System/Library/CoreServices/SystemSettings.app/Contents/Resources/SystemSettings.qml"));
     QStringList args;
     args << qmlPath;
     if (!tab.isEmpty()) args << tab;
-    proc->startDetached(QStringLiteral("/home/gg/SwiftDE/SwiftDE-RunQML"), args);
+    proc->startDetached(getSwiftDEPath(QStringLiteral("/SwiftDE-RunQML")), args);
 }
 
 void ProcessRunner::toggleLaunchpad() {
@@ -997,15 +1065,15 @@ void ProcessRunner::toggleLaunchpad() {
     }
 
     QProcess *proc = new QProcess(this);
-    proc->setProgram(QStringLiteral("/home/gg/SwiftDE/SwiftDE-RunQML"));
+    proc->setProgram(getSwiftDEPath(QStringLiteral("/SwiftDE-RunQML")));
     proc->setArguments({
         QStringLiteral("--layer"),
-        QStringLiteral("/home/gg/SwiftDE/System/Library/CoreServices/Launchpad.app/Contents/Resources/Launchpad.qml")
+        getSwiftDEPath(QStringLiteral("/System/Library/CoreServices/Launchpad.app/Contents/Resources/Launchpad.qml"))
     });
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     if (env.value(QStringLiteral("WAYLAND_DISPLAY")).isEmpty()) env.insert(QStringLiteral("WAYLAND_DISPLAY"), QStringLiteral("wayland-1"));
-    if (env.value(QStringLiteral("XDG_RUNTIME_DIR")).isEmpty()) env.insert(QStringLiteral("XDG_RUNTIME_DIR"), QStringLiteral("/run/user/1000"));
-    if (env.value(QStringLiteral("DBUS_SESSION_BUS_ADDRESS")).isEmpty()) env.insert(QStringLiteral("DBUS_SESSION_BUS_ADDRESS"), QStringLiteral("unix:path=/run/user/1000/bus"));
+    if (env.value(QStringLiteral("XDG_RUNTIME_DIR")).isEmpty()) env.insert(QStringLiteral("XDG_RUNTIME_DIR"), QStringLiteral("/run/user/%1").arg(getuid()));
+    if (env.value(QStringLiteral("DBUS_SESSION_BUS_ADDRESS")).isEmpty()) env.insert(QStringLiteral("DBUS_SESSION_BUS_ADDRESS"), QStringLiteral("unix:path=/run/user/%1/bus").arg(getuid()));
     env.remove(QStringLiteral("QT_WAYLAND_SHELL_INTEGRATION"));
     env.insert(QStringLiteral("LIBGL_ALWAYS_SOFTWARE"), QStringLiteral("1"));
     env.insert(QStringLiteral("QSG_RHI_BACKEND"), QStringLiteral("opengl"));
@@ -1015,8 +1083,13 @@ void ProcessRunner::toggleLaunchpad() {
 }
 
 QString ProcessRunner::loadLaunchpadLayout() {
-    QString path = QStringLiteral("/home/gg/SwiftDE/Library/Preferences/launchpad.json");
-    QFile f(path);
+    QString userConfig = QDir::homePath() + QStringLiteral("/.config/swiftde/launchpad.json");
+    if (QFile::exists(userConfig)) {
+        QFile f(userConfig);
+        if (f.open(QIODevice::ReadOnly)) return QString::fromUtf8(f.readAll());
+    }
+    QString systemConfig = getSwiftDEPath(QStringLiteral("/Library/Preferences/launchpad.json"));
+    QFile f(systemConfig);
     if (f.open(QIODevice::ReadOnly)) {
         return QString::fromUtf8(f.readAll());
     }
@@ -1024,12 +1097,18 @@ QString ProcessRunner::loadLaunchpadLayout() {
 }
 
 void ProcessRunner::saveLaunchpadLayout(const QString &json) {
-    QString path = QStringLiteral("/home/gg/SwiftDE/Library/Preferences/launchpad.json");
-    QDir().mkpath(QStringLiteral("/home/gg/SwiftDE/Library/Preferences"));
-    QFile f(path);
+    QString userDir = QDir::homePath() + QStringLiteral("/.config/swiftde");
+    QDir().mkpath(userDir);
+    QFile f(userDir + QStringLiteral("/launchpad.json"));
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         f.write(json.toUtf8());
         f.close();
+    }
+    QString systemConfig = getSwiftDEPath(QStringLiteral("/Library/Preferences/launchpad.json"));
+    QFile fSys(systemConfig);
+    if (fSys.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        fSys.write(json.toUtf8());
+        fSys.close();
     }
 }
 

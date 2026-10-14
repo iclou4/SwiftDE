@@ -42,6 +42,20 @@ Window {
         source: "Fonts/SF-Symbols-6.otf"
     }
 
+    readonly property bool isDark: sysProc.isDark
+
+    // Theme properties for Topbar & Context Menus
+    readonly property color barTextColor: isDark ? "#ffffff" : "#1d1d1f"
+    readonly property color barBtnHoverColor: isDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)
+    readonly property color barBtnActiveColor: isDark ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.16)
+    readonly property color dropdownBgColor: isDark ? Qt.rgba(0.16, 0.16, 0.18, 0.82) : Qt.rgba(0.95, 0.95, 0.97, 0.78)
+    readonly property color dropdownBorderColor: isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.14)
+    readonly property color dropdownHighlightColor: isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.65)
+    readonly property color dropdownShadowColor: isDark ? Qt.rgba(0, 0, 0, 0.40) : Qt.rgba(0, 0, 0, 0.08)
+    readonly property color dropdownSeparatorColor: isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+    readonly property color dropdownTextColor: isDark ? "#f5f5f7" : "#1d1d1f"
+    readonly property color dropdownSubtextColor: isDark ? Qt.rgba(1, 1, 1, 0.45) : "#48484a"
+
     // Desktop Context Menu properties (rendered on LayerTop to always stay on top of all windows)
     property bool desktopContextMenuOpen: false
     property real desktopContextMenuX: 100
@@ -567,16 +581,16 @@ Window {
             live: true
         }
 
-        // Frosted acrylic tint (macOS Sequoia light glass)
+        // Frosted acrylic tint (macOS Sequoia glass)
         Rectangle {
             anchors.fill: parent
-            color: Qt.rgba(0, 0, 0, 0.13)
+            color: topbarWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(1, 1, 1, 0.28)
         }
 
         // Subtle light sheen for vibrancy
         Rectangle {
             anchors.fill: parent
-            color: Qt.rgba(1, 1, 1, 0.04)
+            color: topbarWindow.isDark ? Qt.rgba(1, 1, 1, 0.03) : Qt.rgba(1, 1, 1, 0.10)
         }
 
         // --- Left section: Apple logo + Global Menu Items ---
@@ -598,8 +612,8 @@ Window {
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
-                    color: (topbarWindow.activeMenu === "apple") ? Qt.rgba(1, 1, 1, 0.25)
-                         : (appleMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent")
+                    color: (topbarWindow.activeMenu === "apple") ? topbarWindow.barBtnActiveColor
+                         : (appleMa.containsMouse ? topbarWindow.barBtnHoverColor : "transparent")
                     Behavior on color { ColorAnimation { duration: 90 } }
                 }
 
@@ -610,7 +624,7 @@ Window {
                     text: "\uE900"
                     font.family: sfSymbols.name
                     font.pixelSize: 20
-                    color: "#ffffff"
+                    color: topbarWindow.barTextColor
                     opacity: 0.95
                 }
 
@@ -647,8 +661,8 @@ Window {
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
-                    color: (topbarWindow.activeMenu === "app") ? Qt.rgba(1, 1, 1, 0.25)
-                         : (appNameMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent")
+                    color: (topbarWindow.activeMenu === "app") ? topbarWindow.barBtnActiveColor
+                         : (appNameMa.containsMouse ? topbarWindow.barBtnHoverColor : "transparent")
                     Behavior on color { ColorAnimation { duration: 90 } }
                 }
 
@@ -659,7 +673,7 @@ Window {
                     font.family: sfBold.name
                     font.bold: true
                     font.pixelSize: 13
-                    color: "#ffffff"
+                    color: topbarWindow.barTextColor
                     opacity: 0.95
                 }
 
@@ -702,8 +716,8 @@ Window {
                     Rectangle {
                         anchors.fill: parent
                         radius: 4
-                        color: (topbarWindow.activeMenu === menuItemBtn.menuKey) ? Qt.rgba(1, 1, 1, 0.25)
-                             : (menuMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent")
+                        color: (topbarWindow.activeMenu === menuItemBtn.menuKey) ? topbarWindow.barBtnActiveColor
+                             : (menuMa.containsMouse ? topbarWindow.barBtnHoverColor : "transparent")
                         Behavior on color { ColorAnimation { duration: 90 } }
                     }
 
@@ -714,7 +728,7 @@ Window {
                         font.family: sfMedium.name
                         font.weight: Font.Medium
                         font.pixelSize: 13
-                        color: "#ffffff"
+                        color: topbarWindow.barTextColor
                         opacity: 0.95
                     }
 
@@ -764,8 +778,8 @@ Window {
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
-                    color: wifiMa.containsPress ? Qt.rgba(1, 1, 1, 0.25)
-                         : (wifiMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent")
+                    color: wifiMa.containsPress ? topbarWindow.barBtnActiveColor
+                         : (wifiMa.containsMouse ? topbarWindow.barBtnHoverColor : "transparent")
                     Behavior on color { ColorAnimation { duration: 90 } }
                 }
 
@@ -784,7 +798,7 @@ Window {
                         ShapePath {
                             strokeWidth: 0
                             strokeColor: "transparent"
-                            fillColor: wifiBtn.signalLevel >= 3 ? Qt.rgba(1, 1, 1, 0.95) : Qt.rgba(1, 1, 1, 0.28)
+                            fillColor: wifiBtn.signalLevel >= 3 ? topbarWindow.barTextColor : (topbarWindow.isDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(0, 0, 0, 0.28))
                             scale: Qt.size(wifiIconBox.width / 512.0, wifiIconBox.height / 512.0)
                             PathSvg {
                                 path: "M256 96c-81.5 0-163 33.6-221.5 88.3-3.3 3-3.4 8.1-.3 11.4l26.7 27.9c3.1 3.3 8.3 3.4 11.6.3 23.3-21.6 49.9-38.8 79.3-51 33-13.8 68.1-20.7 104.3-20.7s71.3 7 104.3 20.7c29.4 12.3 56 29.4 79.3 51 3.3 3.1 8.5 3 11.6-.3l26.7-27.9c3.1-3.2 3-8.3-.3-11.4C419 129.6 337.5 96 256 96z"
@@ -796,7 +810,7 @@ Window {
                         ShapePath {
                             strokeWidth: 0
                             strokeColor: "transparent"
-                            fillColor: wifiBtn.signalLevel >= 2 ? Qt.rgba(1, 1, 1, 0.95) : Qt.rgba(1, 1, 1, 0.28)
+                            fillColor: wifiBtn.signalLevel >= 2 ? topbarWindow.barTextColor : (topbarWindow.isDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(0, 0, 0, 0.28))
                             scale: Qt.size(wifiIconBox.width / 512.0, wifiIconBox.height / 512.0)
                             PathSvg {
                                 path: "M113.2 277.5l28.6 28.3c3.1 3 8 3.2 11.2.3 28.3-25.1 64.6-38.9 102.9-38.9s74.6 13.7 102.9 38.9c3.2 2.9 8.1 2.7 11.2-.3l28.6-28.3c3.3-3.3 3.2-8.6-.3-11.7-37.5-33.9-87.6-54.6-142.5-54.6s-105 20.7-142.5 54.6c-3.3 3.1-3.4 8.4-.1 11.7z"
@@ -808,7 +822,7 @@ Window {
                         ShapePath {
                             strokeWidth: 0
                             strokeColor: "transparent"
-                            fillColor: wifiBtn.signalLevel >= 1 ? Qt.rgba(1, 1, 1, 0.95) : Qt.rgba(1, 1, 1, 0.28)
+                            fillColor: wifiBtn.signalLevel >= 1 ? topbarWindow.barTextColor : (topbarWindow.isDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(0, 0, 0, 0.28))
                             scale: Qt.size(wifiIconBox.width / 512.0, wifiIconBox.height / 512.0)
                             PathSvg {
                                 path: "M256 324.2c-23.4 0-44.6 9.8-59.4 25.5-3 3.2-2.9 8.1.2 11.2l53.4 52.7c3.2 3.2 8.4 3.2 11.6 0l53.4-52.7c3.1-3.1 3.2-8 .2-11.2-14.8-15.6-36-25.5-59.4-25.5z"
@@ -841,8 +855,8 @@ Window {
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
-                    color: spotlightMa.containsPress ? Qt.rgba(1, 1, 1, 0.25)
-                         : (spotlightMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent")
+                    color: spotlightMa.containsPress ? topbarWindow.barBtnActiveColor
+                         : (spotlightMa.containsMouse ? topbarWindow.barBtnHoverColor : "transparent")
                     Behavior on color { ColorAnimation { duration: 90 } }
                 }
 
@@ -852,7 +866,7 @@ Window {
                     text: "\uFCA6"
                     font.family: sfSymbols.name
                     font.pixelSize: 14
-                    color: "#ffffff"
+                    color: topbarWindow.barTextColor
                     opacity: 0.95
                 }
 
@@ -879,9 +893,9 @@ Window {
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
-                    color: topbarWindow.controlCenterOpen ? Qt.rgba(1, 1, 1, 0.25)
-                         : (controlCenterMa.containsPress ? Qt.rgba(1, 1, 1, 0.25)
-                         : (controlCenterMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent"))
+                    color: topbarWindow.controlCenterOpen ? topbarWindow.barBtnActiveColor
+                         : (controlCenterMa.containsPress ? topbarWindow.barBtnActiveColor
+                         : (controlCenterMa.containsMouse ? topbarWindow.barBtnHoverColor : "transparent"))
                     Behavior on color { ColorAnimation { duration: 90 } }
                 }
 
@@ -895,6 +909,13 @@ Window {
                     smooth: true
                     mipmap: false
                     opacity: 0.95
+                    visible: false
+                }
+
+                ColorOverlay {
+                    anchors.fill: controlCenterIcon
+                    source: controlCenterIcon
+                    color: topbarWindow.barTextColor
                 }
 
                 MouseArea {
@@ -925,8 +946,8 @@ Window {
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
-                    color: clockMa.containsPress ? Qt.rgba(1, 1, 1, 0.25)
-                         : (clockMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent")
+                    color: clockMa.containsPress ? topbarWindow.barBtnActiveColor
+                         : (clockMa.containsMouse ? topbarWindow.barBtnHoverColor : "transparent")
                     Behavior on color { ColorAnimation { duration: 90 } }
                 }
 
@@ -937,7 +958,7 @@ Window {
                     font.family: sfMedium.name
                     font.weight: Font.Medium
                     font.pixelSize: 13
-                    color: "#ffffff"
+                    color: topbarWindow.barTextColor
                     opacity: 0.95
                 }
 
@@ -970,8 +991,8 @@ Window {
         Rectangle {
             anchors.fill: parent
             radius: 8
-            color: Qt.rgba(0.94, 0.94, 0.93, 0.70)
-            border.color: Qt.rgba(0, 0, 0, 0.14)
+            color: topbarWindow.dropdownBgColor
+            border.color: topbarWindow.dropdownBorderColor
             border.width: 0.6
 
             // Subtle inner light reflection for vibrancy
@@ -980,7 +1001,7 @@ Window {
                 anchors.margins: 0.6
                 radius: 7.4
                 color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, 0.65)
+                border.color: topbarWindow.dropdownHighlightColor
                 border.width: 0.6
             }
 
@@ -990,7 +1011,7 @@ Window {
                 anchors.margins: -1
                 radius: 9
                 color: "transparent"
-                border.color: Qt.rgba(0, 0, 0, 0.08)
+                border.color: topbarWindow.dropdownShadowColor
                 border.width: 1
                 z: -1
             }
@@ -1015,7 +1036,7 @@ Window {
                             anchors.centerIn: parent
                             width: parent.width - 24
                             height: 0.8
-                            color: Qt.rgba(0, 0, 0, 0.08)
+                            color: topbarWindow.dropdownSeparatorColor
                             visible: !!modelData.separator
                         }
 
@@ -1036,7 +1057,7 @@ Window {
                                 font.family: sfMedium.name
                                 font.weight: Font.Medium
                                 font.pixelSize: 13
-                                color: itemMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                                color: itemMa.containsMouse ? "#ffffff" : topbarWindow.dropdownTextColor
                             }
 
                             Text {
@@ -1047,7 +1068,7 @@ Window {
                                 font.family: sfMedium.name
                                 font.weight: Font.Medium
                                 font.pixelSize: 13
-                                color: itemMa.containsMouse ? "#ffffff" : "#48484a"
+                                color: itemMa.containsMouse ? "#ffffff" : topbarWindow.dropdownSubtextColor
                                 visible: !!modelData.shortcut
                             }
 
@@ -1059,7 +1080,7 @@ Window {
                                 font.family: sfMedium.name
                                 font.weight: Font.DemiBold
                                 font.pixelSize: 15
-                                color: itemMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                                color: itemMa.containsMouse ? "#ffffff" : topbarWindow.dropdownTextColor
                                 visible: !!modelData.hasSubmenu
                             }
 
@@ -1093,8 +1114,8 @@ Window {
         Rectangle {
             anchors.fill: parent
             radius: 8
-            color: Qt.rgba(0.94, 0.94, 0.93, 0.70)
-            border.color: Qt.rgba(0, 0, 0, 0.14)
+            color: topbarWindow.dropdownBgColor
+            border.color: topbarWindow.dropdownBorderColor
             border.width: 0.6
 
             // Subtle inner light reflection for vibrancy
@@ -1103,7 +1124,7 @@ Window {
                 anchors.margins: 0.6
                 radius: 7.4
                 color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, 0.65)
+                border.color: topbarWindow.dropdownHighlightColor
                 border.width: 0.6
             }
 
@@ -1113,7 +1134,7 @@ Window {
                 anchors.margins: -1
                 radius: 9
                 color: "transparent"
-                border.color: Qt.rgba(0, 0, 0, 0.08)
+                border.color: topbarWindow.dropdownShadowColor
                 border.width: 1
                 z: -1
             }
@@ -1137,7 +1158,7 @@ Window {
                         anchors.centerIn: parent
                         width: parent.width - 24
                         height: 0.8
-                        color: Qt.rgba(0, 0, 0, 0.08)
+                        color: topbarWindow.dropdownSeparatorColor
                         visible: !!modelData.separator
                     }
 
@@ -1157,7 +1178,7 @@ Window {
                             font.family: sfMedium.name
                             font.weight: Font.Medium
                             font.pixelSize: 13
-                            color: dmenuMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: dmenuMa.containsMouse ? "#ffffff" : topbarWindow.dropdownTextColor
                         }
 
                         Text {
@@ -1168,7 +1189,7 @@ Window {
                             font.family: sfMedium.name
                             font.weight: Font.DemiBold
                             font.pixelSize: 15
-                            color: dmenuMa.containsMouse ? "#ffffff" : "#1d1d1f"
+                            color: dmenuMa.containsMouse ? "#ffffff" : topbarWindow.dropdownTextColor
                             visible: !!modelData.hasSubmenu
                         }
 
@@ -1194,5 +1215,6 @@ Window {
         z: 100
         isOpen: topbarWindow.controlCenterOpen
         sysProcRef: sysProc
+        wallpaperSource: bgWall
     }
 }

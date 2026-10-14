@@ -11,15 +11,8 @@ sudo apt install -y git meson ninja-build gcc g++ pkg-config \
   libxkbcommon-dev libseat-dev libdisplay-info-dev libliftoff-dev libtomlplusplus-dev \
   nlohmann-json3-dev doctest-dev
 
-SRC="$HOME/SwiftDE"
-if [ ! -d "$SRC" ]; then
-  if [ -d /media/sf_SwiftDE-share/SwiftDE-master ]; then
-    cp -r /media/sf_SwiftDE-share/SwiftDE-master "$SRC"
-  else
-    echo "Copy SwiftDE-master into $SRC manually, then re-run"
-    exit 1
-  fi
-fi
+SWIFTDE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="${SWIFTDE_DIR}"
 cd "$SRC"
 meson setup build --wipe || meson setup build
 ninja -C build
