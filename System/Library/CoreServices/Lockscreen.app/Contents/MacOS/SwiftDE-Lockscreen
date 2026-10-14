@@ -1,0 +1,15 @@
+#!/bin/bash
+# SwiftDE-Lockscreen launcher (macOS .app MacOS executable equivalent).
+# Usage: SwiftDE-Lockscreen [--demo]
+# --demo runs the QML fullscreen for preview. Without it, tries session-lock client (TODO).
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+QML="$HERE/../Resources/Lockscreen.qml"
+if command -v qmlscene >/dev/null 2>&1; then
+  exec qmlscene "$QML" "$@"
+elif command -v qml6 >/dev/null 2>&1; then
+  exec qml6 "$QML" "$@"
+else
+  echo "No QML runtime found. Install qtdeclarative5-dev / qmlscene or Qt6." >&2
+  exit 1
+fi

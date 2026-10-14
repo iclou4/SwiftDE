@@ -1,0 +1,12 @@
+# Wayfire wiring for SwiftDE Lockscreen (append to ~/.config/wayfire.ini inside the VM)
+#
+# [command]
+# binding_lock = <super> <shift> KEY_ESC
+# command_lock = $HOME/SwiftDE/System/Library/CoreServices/Lockscreen.app/Contents/MacOS/SwiftDE-Lockscreen
+#
+# [idle]
+# screensaver_timeout = 300
+# dpms_timeout = 600
+#
+# NOTE: real screen locking needs ext-session-lock-v1 client.
+# Current Lockscreen.qml is a fullscreen preview; session-lock wiring is next step.

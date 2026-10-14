@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=SwiftDE
+Comment=SwiftDE macOS-style desktop (Wayfire)
+Exec=/usr/local/bin/swiftde-session
+TryExec=/usr/local/bin/swiftde-session
+Icon=
+Type=Application

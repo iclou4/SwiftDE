@@ -1,0 +1,150 @@
+[
+  {
+    "id": "beachball"
+  },
+  {
+    "id": "busy",
+    "cursor": "progress"
+  },
+  {
+    "id": "cell",
+    "cursor": "cell"
+  },
+  {
+    "id": "contextualmenu",
+    "cursor": "context-menu"
+  },
+  {
+    "id": "copy",
+    "cursor": "copy"
+  },
+  {
+    "id": "cross",
+    "cursor": "crosshair"
+  },
+  {
+    "id": "default",
+    "cursor": "default"
+  },
+  {
+    "id": "handgrabbing",
+    "cursor": "grabbing"
+  },
+  {
+    "id": "handopen",
+    "cursor": "grab"
+  },
+  {
+    "id": "handpointing",
+    "cursor": "pointer"
+  },
+  {
+    "id": "help",
+    "cursor": "help"
+  },
+  {
+    "id": "makealias",
+    "cursor": "alias"
+  },
+  {
+    "id": "move",
+    "cursor": "all-scroll"
+  },
+  {
+    "id": "notallowed",
+    "cursor": "no-drop"
+  },
+  {
+    "id": "poof"
+  },
+  {
+    "id": "resizedown"
+  },
+  {
+    "id": "resizeeast",
+    "cursor": "e-resize"
+  },
+  {
+    "id": "resizeleft"
+  },
+  {
+    "id": "resizeleftright",
+    "cursor": "col-resize"
+  },
+  {
+    "id": "resizenorth",
+    "cursor": "n-resize"
+  },
+  {
+    "id": "resizenortheast",
+    "cursor": "ne-resize"
+  },
+  {
+    "id": "resizenortheastsouthwest",
+    "cursor": "nesw-resize"
+  },
+  {
+    "id": "resizenorthsouth",
+    "cursor": "ns-resize"
+  },
+  {
+    "id": "resizenorthwest",
+    "cursor": "nw-resize"
+  },
+  {
+    "id": "resizenorthwestsoutheast",
+    "cursor": "nwse-resize"
+  },
+  {
+    "id": "resizeright"
+  },
+  {
+    "id": "resizesouth",
+    "cursor": "s-resize"
+  },
+  {
+    "id": "resizesoutheast",
+    "cursor": "se-resize"
+  },
+  {
+    "id": "resizesouthwest",
+    "cursor": "sw-resize"
+  },
+  {
+    "id": "resizeup"
+  },
+  {
+    "id": "resizeupdown",
+    "cursor": "row-resize"
+  },
+  {
+    "id": "resizewest",
+    "cursor": "w-resize"
+  },
+  {
+    "id": "resizewesteast",
+    "cursor": "ew-resize"
+  },
+  {
+    "id": "screenshotselection"
+  },
+  {
+    "id": "screenshotwindow"
+  },
+  {
+    "id": "textcursor",
+    "cursor": "text"
+  },
+  {
+    "id": "textcursorvertical",
+    "cursor": "vertical-text"
+  },
+  {
+    "id": "zoomin",
+    "cursor": "zoom-in"
+  },
+  {
+    "id": "zoomout",
+    "cursor": "zoom-out"
+  }
+]

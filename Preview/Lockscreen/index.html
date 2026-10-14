@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SwiftDE Lockscreen — Preview</title>
+<style>
+  @font-face {
+    font-family: "OpenRunde";
+    src: url("../../System/Library/Fonts/OpenRunde-Medium.otf") format("opentype");
+    font-weight: 500;
+  }
+  @font-face {
+    font-family: "OpenRundeBold";
+    src: url("../../System/Library/Fonts/OpenRunde-Bold.otf") format("opentype");
+    font-weight: 700;
+  }
+  @font-face {
+    font-family: "OpenRundeSemibold";
+    src: url("../../System/Library/Fonts/OpenRunde-Semibold.otf") format("opentype");
+    font-weight: 600;
+  }
+  @font-face {
+    font-family: "SFPro";
+    src: url("../../System/Library/Fonts/SF-Pro-Display-Regular.otf") format("opentype");
+    font-weight: 400;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: "OpenRunde", sans-serif;
+  }
+  /* Full-viewport stage, zero bars. All metrics are viewport fractions
+     computed in layout() — same composition on any screen. */
+  #stage { position: fixed; inset: 0; width: 100vw; height: 100vh; overflow: hidden; user-select: none; }
+  #stage svg.wp { position: absolute; inset: 0; width: 100vw; height: 100vh; }
+  .pw {
+    position: absolute;
+    border: none;
+    background: rgba(255,255,255,0.18);
+    color: #fff; font-family: "SFPro", sans-serif; font-weight: 400;
+    outline: none; text-align: left;
+  }
+  .pw::placeholder { color: rgba(255,255,255,0.8); font-size: inherit; font-family: "SFPro", sans-serif; font-weight: 400; }
+  #auth.shake { animation: shakeX 0.25s; }
+  @keyframes shakeX {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    50% { transform: translateX(8px); }
+    75% { transform: translateX(-5px); }
+    100% { transform: translateX(0); }
+  }
+  .auth-failed .pw { background: rgba(122,31,31,0.8); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg class="wp" id="scene" viewBox="0 0 616 384" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <linearGradient id="green" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#8cc455"/>
+        <stop offset="0.3" stop-color="#55a047"/>
+        <stop offset="0.6" stop-color="#2f8338"/>
+        <stop offset="1" stop-color="#1d5b26"/>
+      </linearGradient>
+      <filter id="wpBlurF" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur id="blurFe" stdDeviation="9"/>
+      </filter>
+      <mask id="clockMask" maskUnits="userSpaceOnUse" x="0" y="0" width="616" height="384">
+        <text id="clockMaskText" x="308" y="92" text-anchor="middle"
+              font-family="OpenRundeSemibold, 'OpenRunde', sans-serif"
+              font-size="48" font-weight="600" letter-spacing="-1" fill="#ffffff"><tspan id="clockMaskH">9</tspan><tspan id="clockMaskC" dy="-3">:</tspan><tspan id="clockMaskM" dy="3">19</tspan></text>
+      </mask>
+      <mask id="dateMask" maskUnits="userSpaceOnUse" x="0" y="0" width="616" height="384">
+        <text id="dateMaskT" x="308" y="44" text-anchor="middle"
+              font-family="'OpenRunde', sans-serif"
+              font-size="12" font-weight="500" fill="#ffffff">Thursday, June 29</text>
+      </mask>
+      <clipPath id="avClip"><circle id="avCircle" cx="308" cy="319" r="12"/></clipPath>
+    </defs>
+    <rect id="fallbackRect" width="616" height="384" fill="url(#green)"/>
+    <image id="wpImg" href="../../Library/DesktopPictures/Wallpaper.jpg" x="0" y="0" width="616" height="384" preserveAspectRatio="xMidYMid slice"/>
+    <!-- Frosted glass date -->
+    <g mask="url(#dateMask)">
+      <use href="#wpImg" filter="url(#wpBlurF)"/>
+      <rect id="veilDate" x="250" y="30" width="116" height="18" fill="#ffffff" opacity="0.22"/>
+    </g>
+    <text id="dateSvg" x="308" y="44" text-anchor="middle"
+          font-family="'OpenRunde', sans-serif"
+          font-size="12" font-weight="500"
+          fill="rgba(255,255,255,0.65)">Thursday, June 29</text>
+    <!-- Frosted glass clock -->
+    <g mask="url(#clockMask)">
+      <use href="#wpImg" filter="url(#wpBlurF)"/>
+      <rect id="veilClock" x="240" y="33" width="140" height="60" fill="#ffffff" opacity="0.22"/>
+    </g>
+    <text id="clockSvg" x="308" y="92" text-anchor="middle"
+          font-family="OpenRundeSemibold, 'OpenRunde', sans-serif"
+          font-size="48" font-weight="600" letter-spacing="-1"
+          fill="rgba(255,255,255,0.60)"><tspan id="clockH">9</tspan><tspan id="clockC" dy="-3">:</tspan><tspan id="clockM" dy="5">19</tspan></text>
+    <image id="avImg" href="../../Library/UserPictures/Avatar.jpg" x="296" y="307" width="24" height="24"
+           preserveAspectRatio="xMidYMid slice" clip-path="url(#avClip)"/>
+  </svg>
+  <div id="auth">
+    <input class="pw" id="pw" type="password" placeholder="Enter Password" autocomplete="off">
+  </div>
+</div>
+<script>
+  // Design proportions frozen from the 616×384 reference, expressed as
+  // viewport fractions. layout() maps them to real pixels — 1 unit = 1px,
+  // no outer scaling, nothing overflows on any screen.
+  const scene = document.getElementById('scene');
+  const $ = (id) => document.getElementById(id);
+  const clockIds = ['clockSvg', 'clockMaskText'];
+  const dateIds = ['dateSvg', 'dateMaskT'];
+
+  function setTextAttrs(el, x, y, fs, ls) {
+    el.setAttribute('x', x); el.setAttribute('y', y);
+    el.setAttribute('font-size', fs); el.setAttribute('letter-spacing', ls);
+  }
+  function fitVeil(veil, text, padX, padY) {
+    try {
+      const b = text.getBBox();
+      veil.setAttribute('x', b.x - padX); veil.setAttribute('y', b.y - padY);
+      veil.setAttribute('width', b.width + padX * 2); veil.setAttribute('height', b.height + padY * 2);
+    } catch (e) { /* not rendered yet */ }
+  }
+  function layout() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const cx = vw / 2;
+    scene.setAttribute('viewBox', '0 0 ' + vw + ' ' + vh);
+    // wallpaper + fallback fill viewport
+    for (const id of ['wpImg', 'fallbackRect']) {
+      $(id).setAttribute('width', vw); $(id).setAttribute('height', vh);
+    }
+    // backdrop blur follows screen height
+    $('blurFe').setAttribute('stdDeviation', (vh * 0.0234).toFixed(2));
+    // mask regions follow viewport
+    for (const id of ['clockMask', 'dateMask']) {
+      $(id).setAttribute('width', vw); $(id).setAttribute('height', vh);
+    }
+    // date: 3.1% of height, baseline 11.5% of height
+    const dateFS = vh * 0.03125, dateBase = vh * 0.1146;
+    for (const id of dateIds) setTextAttrs($(id), cx, dateBase, dateFS.toFixed(1), '0');
+    // clock: 12.5% of height, baseline 24% of height
+    const clockFS = vh * 0.125, clockBase = vh * 0.2396;
+    const ls = (-0.0208 * clockFS).toFixed(1);
+    const colonDy = (-0.0625 * clockFS).toFixed(1), minDy = (0.0625 * clockFS).toFixed(1);
+    for (const id of clockIds) setTextAttrs($(id), cx, clockBase, clockFS.toFixed(1), ls);
+    for (const id of ['clockC', 'clockMaskC']) $(id).setAttribute('dy', colonDy);
+    for (const id of ['clockM', 'clockMaskM']) $(id).setAttribute('dy', minDy);
+    fitVeil($('veilClock'), $('clockSvg'), clockFS * 0.25, clockFS * 0.2);
+    fitVeil($('veilDate'), $('dateSvg'), dateFS * 0.6, dateFS * 0.5);
+    // avatar: 6.25% of height, top edge at 80% of height
+    const avS = vh * 0.0625, avTop = vh * 0.7995;
+    $('avCircle').setAttribute('cx', cx); $('avCircle').setAttribute('cy', avTop + avS / 2);
+    $('avCircle').setAttribute('r', avS / 2);
+    const avImg = $('avImg');
+    avImg.setAttribute('x', cx - avS / 2); avImg.setAttribute('y', avTop);
+    avImg.setAttribute('width', avS); avImg.setAttribute('height', avS);
+    // password field: 11.7% of width × 3.65% of height, top edge 87.8% of height
+    const pw = $('pw');
+    const pwW = vw * 0.078, pwH = vh * 0.03;
+    pw.style.left = (cx - pwW / 2) + 'px'; pw.style.top = (vh * 0.8776) + 'px';
+    pw.style.width = pwW + 'px'; pw.style.height = pwH + 'px';
+    pw.style.borderRadius = (pwH / 2) + 'px';
+    pw.style.fontSize = (vh * 0.013) + 'px';
+    pw.style.padding = '0 ' + (pwH * 0.55) + 'px ' + (pwH * 0.07) + 'px';
+    pw.style.backdropFilter = pw.style.webkitBackdropFilter =
+      'blur(' + (vh * 0.031).toFixed(1) + 'px) contrast(1.06)';
+  }
+  function tick() {
+    const d = new Date();
+    const h = String(d.getHours()), m = String(d.getMinutes()).padStart(2, '0');
+    for (const id of ['clockH', 'clockMaskH']) $(id).textContent = h;
+    for (const id of ['clockM', 'clockMaskM']) $(id).textContent = m;
+    const ds = d.toLocaleDateString('en-US', { weekday: 'long' }) + ' ' + d.getDate() + ' ' + d.toLocaleDateString('en-US', { month: 'long' });
+    for (const id of dateIds) $(id).textContent = ds;
+    fitVeil($('veilClock'), $('clockSvg'), parseFloat($('clockSvg').getAttribute('font-size')) * 0.25, parseFloat($('clockSvg').getAttribute('font-size')) * 0.2);
+    fitVeil($('veilDate'), $('dateSvg'), parseFloat($('dateSvg').getAttribute('font-size')) * 0.6, parseFloat($('dateSvg').getAttribute('font-size')) * 0.5);
+  }
+  window.addEventListener('resize', layout);
+  layout(); tick();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layout(); tick(); });
+  setInterval(tick, 1000);
+
+  const pw = $('pw'), auth = $('auth');
+  pw.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      if (!pw.value) {
+        auth.classList.remove('shake'); void auth.offsetWidth;
+        auth.classList.add('auth-failed', 'shake');
+        setTimeout(() => auth.classList.remove('auth-failed'), 1200);
+      } else { pw.value = ''; pw.blur(); }
+    }
+    if (e.key === 'Escape') pw.value = '';
+  });
+  pw.focus();
+</script>
+</body>
+</html>

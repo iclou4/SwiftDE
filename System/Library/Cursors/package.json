@@ -1,0 +1,28 @@
+{
+  "name": "mac-cursors",
+  "version": "1.0.0",
+  "description": "All the cursor icons in SVG format, stripped straight out of OS X",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx @11ty/eleventy --serve",
+    "build": "npx @11ty/eleventy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daviddarnes/mac-cursors.git"
+  },
+  "keywords": [
+    "svg",
+    "icons",
+    "mac"
+  ],
+  "author": "David Darnes (me@daviddarnes.com)",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/daviddarnes/mac-cursors/issues"
+  },
+  "homepage": "https://github.com/daviddarnes/mac-cursors#readme",
+  "dependencies": {
+    "@11ty/eleventy": "^0.12.1"
+  }
+}
