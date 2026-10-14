@@ -1,10 +1,4 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/apple_dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/apple_light.svg">
-    <img alt="SwiftDE Logo" src="docs/images/apple_light.svg" width="64" height="64" />
-  </picture>
-</p>
+
 
 <h1 align="center">SwiftDE</h1>
 
