@@ -20,6 +20,15 @@
 int main(int argc, char **argv) {
     qputenv("LIBGL_ALWAYS_SOFTWARE", "1");
     qputenv("QSG_RHI_BACKEND", "opengl");
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "wayland");
+    }
+    if (qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY")) {
+        qputenv("WAYLAND_DISPLAY", "wayland-1");
+    }
+    if (qEnvironmentVariableIsEmpty("XDG_RUNTIME_DIR")) {
+        qputenv("XDG_RUNTIME_DIR", "/run/user/1000");
+    }
 
     bool layer = false;
     bool topbar = false;

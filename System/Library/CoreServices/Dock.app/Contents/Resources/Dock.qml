@@ -131,15 +131,19 @@ ApplicationWindow {
 
     // Launch app command
     function launchItem(item) {
+        console.log("launchItem called for:", item ? item.id : "null")
         if (!item) return
         closeAllMenus()
         if (item.id === "launchpad") {
+            console.log("Executing Launchpad toggle...")
             try {
                 if (typeof sysProc.toggleLaunchpad === "function") {
                     sysProc.toggleLaunchpad()
                     return
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.log("toggleLaunchpad threw:", e)
+            }
             sysProc.launch("pkill -f Launchpad.qml || env WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl /home/gg/SwiftDE/SwiftDE-RunQML --layer /home/gg/SwiftDE/System/Library/CoreServices/Launchpad.app/Contents/Resources/Launchpad.qml")
             return
         }
@@ -263,22 +267,22 @@ ApplicationWindow {
             NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
         }
 
-        // Frosted Glass Vibrancy Background (subtle translucency & specular sheen)
+        // Frosted Glass Vibrancy Background (styled identically to context menu)
         Rectangle {
             anchors.fill: parent
             radius: 19
-            color: Qt.rgba(0.93, 0.93, 0.93, 0.38)
-            border.color: Qt.rgba(0, 0, 0, 0.12)
-            border.width: 0.5
+            color: Qt.rgba(0.94, 0.94, 0.93, 0.82)
+            border.color: Qt.rgba(0, 0, 0, 0.14)
+            border.width: 0.6
 
-            // Specular inner light reflection (thinner white border)
+            // Specular inner light reflection (matching context menu)
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: 0.5
-                radius: 18.5
+                anchors.margins: 0.6
+                radius: 18.4
                 color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, 0.45)
-                border.width: 0.35
+                border.color: Qt.rgba(1, 1, 1, 0.65)
+                border.width: 0.6
             }
 
             // Outer drop shadow border
@@ -483,6 +487,7 @@ ApplicationWindow {
                         }
 
                         onClicked: (mouse) => {
+                            console.log("DOCK app clicked, button:", mouse.button, "id:", modelData ? modelData.id : "none")
                             if (mouse.button === Qt.RightButton) {
                                 var globalPt = appItem.mapToItem(null, width / 2, 0)
                                 dockWindow.contextMenuTargetItem = modelData
