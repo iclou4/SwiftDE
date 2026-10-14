@@ -267,22 +267,22 @@ ApplicationWindow {
             NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
         }
 
-        // Frosted Glass Vibrancy Background (styled identically to context menu)
+        // Frosted Glass Vibrancy Background (translucent Apple glass)
         Rectangle {
             anchors.fill: parent
             radius: 19
-            color: Qt.rgba(0.94, 0.94, 0.93, 0.82)
-            border.color: Qt.rgba(0, 0, 0, 0.14)
-            border.width: 0.6
+            color: Qt.rgba(0.92, 0.92, 0.94, 0.30)
+            border.color: Qt.rgba(0, 0, 0, 0.12)
+            border.width: 0.5
 
-            // Specular inner light reflection (matching context menu)
+            // Specular inner light reflection
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: 0.6
-                radius: 18.4
+                anchors.margins: 0.5
+                radius: 18.5
                 color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, 0.65)
-                border.width: 0.6
+                border.color: Qt.rgba(1, 1, 1, 0.45)
+                border.width: 0.5
             }
 
             // Outer drop shadow border
