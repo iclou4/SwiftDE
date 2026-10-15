@@ -40,6 +40,9 @@ class ProcessRunner : public QObject {
     Q_PROPERTY(QString homePath READ homePath CONSTANT)
     Q_PROPERTY(QString swiftdePath READ swiftdePath CONSTANT)
 
+    // True while the SwiftDE lockscreen surface is present (used by the Dock to hide itself)
+    Q_PROPERTY(bool lockScreenActive READ lockScreenActive NOTIFY lockScreenActiveChanged)
+
 public:
     explicit ProcessRunner(QObject *parent = nullptr);
 
@@ -133,6 +136,8 @@ public:
     QJsonObject dockSettings() const { return m_dockSettings; }
     Q_INVOKABLE void setDockSetting(const QString &key, const QVariant &value);
 
+    bool lockScreenActive() const { return m_lockScreenActive; }
+
     Q_INVOKABLE void setWallpaper(const QString &url, const QString &name = QString());
     Q_INVOKABLE void refreshWallpaper();
     Q_INVOKABLE void openSystemSettings(const QString &tab = QStringLiteral("wallpaper"));
@@ -166,6 +171,7 @@ signals:
     void accentColorChanged();
     void dockSettingsChanged();
     void runningAppsChanged();
+    void lockScreenActiveChanged();
 
 private slots:
     void pollActiveApp();
@@ -192,6 +198,7 @@ private:
     bool m_isDark = false;
     QString m_accentColor = QStringLiteral("#007aff");
     QJsonObject m_dockSettings;
+    bool m_lockScreenActive = false;
     class QProcess *m_wallpaperMonitor = nullptr;
     class QProcess *m_interfaceMonitor = nullptr;
     void startWallpaperMonitor();

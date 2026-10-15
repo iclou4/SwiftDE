@@ -8,7 +8,7 @@ Window {
     id: topbarWindow
     visible: false
     width: Screen.width > 0 ? Screen.width : 1920
-    height: (activeMenu !== "" || controlCenterOpen || desktopContextMenuOpen) ? (Screen.height > 0 ? Screen.height : 1080) : 25
+    height: (activeMenu !== "" || controlCenterOpen || desktopContextMenuOpen) ? (Screen.height > 0 ? Screen.height : 1080) : 24
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus
 
@@ -38,6 +38,11 @@ Window {
     }
 
     FontLoader {
+        id: sfSemibold
+        source: "../../../../../../Library/Fonts/SF-Pro-Text-Semibold.otf"
+    }
+
+    FontLoader {
         id: sfSymbols
         source: "Fonts/SF-Symbols-6.otf"
     }
@@ -45,7 +50,7 @@ Window {
     readonly property bool isDark: sysProc.isDark
 
     // Theme properties for Topbar & Context Menus
-    readonly property color barTextColor: isDark ? "#ffffff" : "#1d1d1f"
+    readonly property color barTextColor: isDark ? "#ffffff" : "#000000"
     readonly property color barBtnHoverColor: isDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.08)
     readonly property color barBtnActiveColor: isDark ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.16)
     readonly property color dropdownBgColor: isDark ? Qt.rgba(0.16, 0.16, 0.18, 0.82) : Qt.rgba(0.95, 0.95, 0.97, 0.78)
@@ -544,7 +549,7 @@ Window {
     Item {
         id: upscaled
         width: topbarWindow.width
-        height: 25
+        height: 24
         visible: false
 
         ShaderEffectSource {
@@ -569,7 +574,7 @@ Window {
         x: 0
         y: 0
         width: parent.width
-        height: 25
+        height: 24
         z: 50
         clip: true
 
@@ -581,31 +586,27 @@ Window {
             live: true
         }
 
-        // Frosted acrylic tint (macOS Sequoia glass)
+        // Frosted acrylic tint — 1:1 with Figma "Menu Bar"
+        // Dark : backdrop-blur 25px · fill rgba(0,0,0,0.18)   · mix-blend-darken
+        // Light: backdrop-blur 25px · fill rgba(255,255,255,0.5)
         Rectangle {
             anchors.fill: parent
-            color: topbarWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(1, 1, 1, 0.28)
-        }
-
-        // Subtle light sheen for vibrancy
-        Rectangle {
-            anchors.fill: parent
-            color: topbarWindow.isDark ? Qt.rgba(1, 1, 1, 0.03) : Qt.rgba(1, 1, 1, 0.10)
+            color: topbarWindow.isDark ? Qt.rgba(0, 0, 0, 0.18) : Qt.rgba(1, 1, 1, 0.5)
         }
 
         // --- Left section: Apple logo + Global Menu Items ---
         Row {
             id: menuRow
             anchors.left: parent.left
-            anchors.leftMargin: 10
+            anchors.leftMargin: 8
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            spacing: 2
+            spacing: 0
 
             // Apple Logo Button
             Item {
                 id: appleBtn
-                width: 28
+                width: 34
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
 
@@ -617,15 +618,23 @@ Window {
                     Behavior on color { ColorAnimation { duration: 90 } }
                 }
 
-                Text {
+                Image {
                     id: appleIcon
                     anchors.centerIn: parent
-                    anchors.verticalCenterOffset: -1.2
-                    text: "\uE900"
-                    font.family: sfSymbols.name
-                    font.pixelSize: 20
+                    anchors.verticalCenterOffset: -0.5
+                    width: 13
+                    height: 16
+                    source: "apple_2x.png"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                    visible: false
+                }
+
+                ColorOverlay {
+                    anchors.fill: appleIcon
+                    source: appleIcon
                     color: topbarWindow.barTextColor
-                    opacity: 0.95
                 }
 
                 MouseArea {
@@ -654,7 +663,7 @@ Window {
             // App Name Button (Bold)
             Item {
                 id: appNameBtn
-                width: appNameText.implicitWidth + 16
+                width: appNameText.implicitWidth + 22
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
 
@@ -674,7 +683,7 @@ Window {
                     font.bold: true
                     font.pixelSize: 13
                     color: topbarWindow.barTextColor
-                    opacity: 0.95
+                    opacity: 1.0
                 }
 
                 MouseArea {
@@ -707,7 +716,7 @@ Window {
 
                 Item {
                     id: menuItemBtn
-                    width: menuText.implicitWidth + 16
+                    width: menuText.implicitWidth + 22
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
 
@@ -729,7 +738,7 @@ Window {
                         font.weight: Font.Medium
                         font.pixelSize: 13
                         color: topbarWindow.barTextColor
-                        opacity: 0.95
+                        opacity: 1.0
                     }
 
                     MouseArea {
@@ -761,7 +770,7 @@ Window {
         Row {
             id: rightRow
             anchors.right: parent.right
-            anchors.rightMargin: 10
+            anchors.rightMargin: 8
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             spacing: 4
@@ -867,7 +876,7 @@ Window {
                     font.family: sfSymbols.name
                     font.pixelSize: 14
                     color: topbarWindow.barTextColor
-                    opacity: 0.95
+                    opacity: 1.0
                 }
 
                 MouseArea {
@@ -959,7 +968,7 @@ Window {
                     font.weight: Font.Medium
                     font.pixelSize: 13
                     color: topbarWindow.barTextColor
-                    opacity: 0.95
+                    opacity: 1.0
                 }
 
                 MouseArea {

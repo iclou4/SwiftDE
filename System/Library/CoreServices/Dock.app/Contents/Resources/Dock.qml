@@ -12,6 +12,22 @@ ApplicationWindow {
 
     SysProc { id: sysProc }
 
+    Timer {
+        interval: 2500; running: true; repeat: false
+        onTriggered: console.log("DOCKDBG win=" + dockWindow.width + "x" + dockWindow.height
+            + " pill=" + dockPill.width + "x" + dockPill.height + " @" + dockPill.x + "," + dockPill.y
+            + " row=" + contentRow.width + "x" + contentRow.height
+            + " items=" + dockWindow.dockItems.length
+            + " isDark=" + dockWindow.isDark
+            + " locked=" + sysProc.lockScreenActive
+            + " op=" + dockWindow.opacity
+            + " vis=" + dockWindow.visible)
+    }
+
+    // The Dock must never be visible on the lockscreen: hide it entirely while locked
+    opacity: sysProc.lockScreenActive ? 0.0 : 1.0
+    Behavior on opacity { NumberAnimation { duration: 120 } }
+
     // Screen dimensions
     width: Screen.width > 0 ? Screen.width : 1920
     // Ample headroom so magnified icons and tooltips NEVER get cut off at the top
@@ -68,20 +84,23 @@ ApplicationWindow {
     property bool showPositionSubmenu: false
     property bool showMinimiseSubmenu: false
 
-    // macOS Dock proportions: subtly stretched icons eliminating vertical elongation
-    readonly property real baseIconSize: 60
-    readonly property real maxIconSize: 92
-    readonly property real iconStretch: 1.06
+    // macOS Dock proportions: 1:1 with Apple Design Resources (macOS Sonoma / Sequoia)
+    readonly property real baseIconSize: 54
+    readonly property real maxIconSize: 96
+    readonly property real iconStretch: 1.0
     readonly property real baseIconWidth: Math.round(baseIconSize * iconStretch)
-    readonly property real effectRadius: 190
-    readonly property real itemSpacing: 5
+    readonly property real effectRadius: 210
+    readonly property real itemSpacing: 10
+    readonly property real pillHeight: 76
+    readonly property real pillRadius: 24
+    readonly property real pillPaddingH: 14
 
     // Total resting width of content row
     readonly property real restingAppsWidth: dockItems.length * (baseIconWidth + itemSpacing)
-    readonly property real restingSeparatorWidth: 12 + itemSpacing
+    readonly property real restingSeparatorWidth: 25
     readonly property real restingRightWidth: rightItems.length * (baseIconWidth + itemSpacing)
     readonly property real totalRestingWidth: restingAppsWidth + restingSeparatorWidth + restingRightWidth
-    readonly property real restingPillWidth: totalRestingWidth + 16
+    readonly property real restingPillWidth: totalRestingWidth + pillPaddingH * 2
     readonly property real restingPillLeft: Math.round((dockWindow.width - restingPillWidth) / 2)
 
     // Pinned Applications (Finder is ALWAYS #1 and cannot be unpinned)
@@ -252,52 +271,172 @@ ApplicationWindow {
         mouseLeaveTimer.restart()
     }
 
-    // --- Main Glass Dock Pill Container ---
+    // Background wallpaper reference for frosted acrylic sampling
+    Image {
+        id: wpFull
+        source: (sysProc && sysProc.wallpaperUrl && sysProc.wallpaperUrl.length > 0) ? sysProc.wallpaperUrl : "../../../../../../Library/DesktopPictures/Wallpaper.jpg"
+        width: Screen.width > 0 ? Screen.width : 1920
+        height: Screen.height > 0 ? Screen.height : 1080
+        fillMode: Image.PreserveAspectCrop
+        smooth: true
+        visible: false
+    }
+
+    // --- Main Glass Dock Pill Container (1:1 with Apple Design Resources) ---
     Item {
         id: dockPill
         property bool isFullyHidden: false
 
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: isFullyHidden ? -height - 10 : 6
+        anchors.bottomMargin: isFullyHidden ? -height - 20 : 10
         z: 40
 
-        // Dock pill dynamically expands horizontally to accommodate magnified icons without overlapping!
-        width: contentRow.width + 16
-        height: Math.round(dockWindow.baseIconSize + 14)
+        // Dock pill dynamically expands horizontally to accommodate magnified icons
+        width: contentRow.width + dockWindow.pillPaddingH * 2
+        height: dockWindow.pillHeight
 
         Behavior on anchors.bottomMargin {
             NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
         }
 
-        // Frosted Glass Vibrancy Background (translucent Apple glass)
+        // --- Frosted Glass Dock Background Pipeline ---
+        Item {
+            id: dockGlass
+            anchors.fill: parent
+            z: -1
+
+            readonly property real originScreenX: dockPill.x
+            readonly property real originScreenY: (Screen.height - dockWindow.height) + dockPill.y
+
+            // Wallpaper crop: STRICTLY the exact bounding box behind dockPill
+            ShaderEffectSource {
+                id: wpCrop
+                width: Math.max(1, dockPill.width)
+                height: Math.max(1, dockPill.height)
+                sourceItem: wpFull
+                sourceRect: Qt.rect(
+                    Math.max(0, dockGlass.originScreenX),
+                    Math.max(0, dockGlass.originScreenY),
+                    Math.max(1, dockPill.width),
+                    Math.max(1, dockPill.height)
+                )
+                hideSource: false
+                live: true
+                visible: false
+            }
+
+            // Downsample 4x for deep acrylic blur diffusion & high performance
+            Item {
+                id: wpDownsampled
+                width: Math.max(1, Math.round(dockPill.width / 4))
+                height: Math.max(1, Math.round(dockPill.height / 4))
+                visible: false
+
+                ShaderEffectSource {
+                    anchors.fill: parent
+                    sourceItem: wpCrop
+                    hideSource: false
+                    live: true
+                    smooth: true
+                }
+            }
+
+            FastBlur {
+                id: blurPass1
+                anchors.fill: wpDownsampled
+                source: wpDownsampled
+                radius: 48
+                transparentBorder: false
+                visible: false
+            }
+
+            Item {
+                id: wpUpscaled
+                width: Math.max(1, dockPill.width)
+                height: Math.max(1, dockPill.height)
+                visible: false
+
+                ShaderEffectSource {
+                    anchors.fill: parent
+                    sourceItem: blurPass1
+                    hideSource: false
+                    live: true
+                    smooth: true
+                }
+            }
+
+            FastBlur {
+                id: blurPass2
+                anchors.fill: wpUpscaled
+                source: wpUpscaled
+                radius: 24
+                transparentBorder: false
+                visible: false
+            }
+
+            // Continuous Squircle Mask for the Dock Pill
+            Rectangle {
+                id: pillMask
+                anchors.fill: parent
+                radius: dockWindow.pillRadius
+                visible: false
+            }
+
+            // Masked Blurred Wallpaper Output
+            OpacityMask {
+                anchors.fill: parent
+                source: blurPass2
+                maskSource: pillMask
+            }
+
+            // Frosted Acrylic Tint Layer (macOS Sonoma / Sequoia tokens)
+            Rectangle {
+                id: pillTint
+                anchors.fill: parent
+                radius: dockWindow.pillRadius
+                color: dockWindow.isDark ? Qt.rgba(0.12, 0.12, 0.14, 0.58)
+                                         : Qt.rgba(1.0, 1.0, 1.0, 0.34)
+                border.width: 1
+                border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.18)
+                                                : Qt.rgba(1, 1, 1, 0.55)
+            }
+
+            // Top specular highlight rim (macOS signature glass edge catch-light)
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 20
+                anchors.rightMargin: 20
+                height: 1
+                color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.75)
+                opacity: 0.8
+            }
+        }
+
+        // Multi-layer ambient drop shadow around the floating pill
         Rectangle {
             anchors.fill: parent
-            radius: 19
-            color: dockWindow.isDark ? Qt.rgba(0.12, 0.12, 0.14, 0.50) : Qt.rgba(0.92, 0.92, 0.94, 0.30)
-            border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.12)
-            border.width: 0.5
+            anchors.margins: -1
+            radius: dockWindow.pillRadius + 1
+            color: "transparent"
+            border.color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(0, 0, 0, 0.12)
+            border.width: 1
+            z: -2
+        }
 
-            // Specular inner light reflection
-            Rectangle {
-                anchors.fill: parent
-                anchors.margins: 0.5
-                radius: 18.5
-                color: "transparent"
-                border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.45)
-                border.width: 0.5
-            }
-
-            // Outer drop shadow border
-            Rectangle {
-                anchors.fill: parent
-                anchors.margins: -1
-                radius: 20
-                color: "transparent"
-                border.color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(0, 0, 0, 0.08)
-                border.width: 1
-                z: -1
-            }
+        DropShadow {
+            anchors.fill: dockGlass
+            source: dockGlass
+            radius: dockWindow.isDark ? 22 : 16
+            samples: 25
+            spread: 0.0
+            horizontalOffset: 0
+            verticalOffset: dockWindow.isDark ? 8 : 6
+            color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.40) : Qt.rgba(0, 0, 0, 0.18)
+            transparentBorder: true
+            z: -3
         }
 
         // Master MouseArea strictly over the Dock Pill
@@ -323,7 +462,7 @@ ApplicationWindow {
             id: contentRow
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 7
+            anchors.bottomMargin: 11
             spacing: dockWindow.itemSpacing
 
             // Left Section: Pinned Applications
@@ -333,7 +472,7 @@ ApplicationWindow {
 
                 Item {
                     id: appItem
-                    property real restingCenterX: dockWindow.restingPillLeft + 8 + (index + 0.5) * (dockWindow.baseIconWidth + dockWindow.itemSpacing)
+                    property real restingCenterX: dockWindow.restingPillLeft + dockWindow.pillPaddingH + (index + 0.5) * (dockWindow.baseIconWidth + dockWindow.itemSpacing)
                     property real itemSize: dockWindow.computeSizeForRestingX(restingCenterX)
                     property real itemScale: itemSize / dockWindow.baseIconSize
                     property real itemWidth: Math.round(itemSize * dockWindow.iconStretch)
@@ -367,7 +506,7 @@ ApplicationWindow {
                             id: iconImg
                             anchors.fill: parent
                             source: "../../../../../../Library/Application/Icons/png/" + modelData.icon
-                            fillMode: Image.Stretch
+                            fillMode: Image.PreserveAspectFit
                             smooth: true
                             mipmap: true
                             sourceSize.width: 128
@@ -414,16 +553,16 @@ ApplicationWindow {
                         }
                     }
 
-                    // Running dot indicator
+                    // Running dot indicator (1:1 with Apple Design Resources)
                     Rectangle {
                         id: runningDot
                         width: 4
                         height: 4
                         radius: 2
-                        color: "#222224"
+                        color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.82) : Qt.rgba(0, 0, 0, 0.72)
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.top: parent.bottom
-                        anchors.topMargin: 2
+                        anchors.topMargin: 3
                         visible: (sysProc.runningApps && sysProc.runningApps.indexOf(modelData.id) !== -1) || modelData.id === "finder"
                     }
 
@@ -601,18 +740,19 @@ ApplicationWindow {
                 }
             }
 
-            // --- Vertical Dock Divider / Separator Line ---
+            // --- Vertical Dock Divider / Separator Line (1:1 with Apple Design Resources) ---
             Item {
                 id: separatorItem
-                width: 12
+                width: dockWindow.restingSeparatorWidth
                 height: dockWindow.baseIconSize
                 anchors.bottom: parent.bottom
 
                 Rectangle {
                     anchors.centerIn: parent
                     width: 1
-                    height: parent.height - 20
-                    color: Qt.rgba(0, 0, 0, 0.22)
+                    height: 42
+                    radius: 0.5
+                    color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.18)
                 }
 
                 MouseArea {
@@ -650,7 +790,7 @@ ApplicationWindow {
 
                 Item {
                     id: rightItem
-                    property real restingCenterX: dockWindow.restingPillLeft + 8 + dockWindow.restingAppsWidth + dockWindow.restingSeparatorWidth + (index + 0.5) * (dockWindow.baseIconWidth + dockWindow.itemSpacing)
+                    property real restingCenterX: dockWindow.restingPillLeft + dockWindow.pillPaddingH + dockWindow.restingAppsWidth + dockWindow.restingSeparatorWidth + (index + 0.5) * (dockWindow.baseIconWidth + dockWindow.itemSpacing)
                     property real itemSize: dockWindow.computeSizeForRestingX(restingCenterX)
                     property real itemScale: itemSize / dockWindow.baseIconSize
                     property real itemWidth: Math.round(itemSize * dockWindow.iconStretch)
@@ -679,7 +819,7 @@ ApplicationWindow {
                         Image {
                             anchors.fill: parent
                             source: "../../../../../../Library/Application/Icons/png/" + modelData.icon
-                            fillMode: Image.Stretch
+                            fillMode: Image.PreserveAspectFit
                             smooth: true
                             mipmap: true
                             sourceSize.width: 128

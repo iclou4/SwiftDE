@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
                     ls->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
                     ls->setScope(QStringLiteral("desktop"));
                 } else if (dock) {
-                    ls->setLayer(LayerShellQt::Window::LayerOverlay);
+                    ls->setLayer(LayerShellQt::Window::LayerTop);
                     LayerShellQt::Window::Anchors anchors;
                     anchors |= LayerShellQt::Window::AnchorBottom;
                     anchors |= LayerShellQt::Window::AnchorLeft;

@@ -352,9 +352,22 @@ void ProcessRunner::pollActiveApp() {
                     QJsonDocument docList = QJsonDocument::fromJson(bufList);
                     if (docList.isArray()) {
                         QStringList running;
+                        bool lockActive = false;
                         for (const QJsonValue &v : docList.array()) {
                             if (!v.isObject()) continue;
                             QJsonObject obj = v.toObject();
+
+                            // Detect the SwiftDE lockscreen layer-surface (scope "lockscreen")
+                            if (obj["mapped"].toBool(false)) {
+                                QString rawId = obj["app-id"].toString().toLower();
+                                QString rawTitle = obj["title"].toString().toLower();
+                                if (rawId.contains(QStringLiteral("lockscreen")) ||
+                                    rawTitle.contains(QStringLiteral("lockscreen")))
+                                {
+                                    lockActive = true;
+                                }
+                            }
+
                             QString role = obj["role"].toString();
                             QString type = obj["type"].toString();
                             if (role != QStringLiteral("toplevel") && type != QStringLiteral("toplevel"))
@@ -406,6 +419,11 @@ void ProcessRunner::pollActiveApp() {
                         if (m_runningApps != running) {
                             m_runningApps = running;
                             emit runningAppsChanged();
+                        }
+
+                        if (lockActive != m_lockScreenActive) {
+                            m_lockScreenActive = lockActive;
+                            emit lockScreenActiveChanged();
                         }
                     }
                 }
@@ -890,9 +908,11 @@ void ProcessRunner::refreshWallpaper() {
         }
     }
 
-    // Also check GTK theme for dark mode indicator
+    // Also check GTK theme for dark mode indicator — ONLY when color-scheme is unset.
+    // Otherwise an explicit "default"/"prefer-light" choice would be overridden by a
+    // dark GTK theme (e.g. WhiteSur-Dark), making the Light/Dark switch appear to do nothing.
     bool dark = (m_colorScheme == QStringLiteral("prefer-dark") || m_colorScheme == QStringLiteral("dark"));
-    if (!dark) {
+    if (!dark && m_colorScheme.isEmpty()) {
         QProcess procGtk;
         procGtk.setProcessEnvironment(env);
         procGtk.start(QStringLiteral("gsettings"), {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("gtk-theme")});
@@ -1030,7 +1050,13 @@ void ProcessRunner::setColorScheme(const QString &scheme) {
     m_colorScheme = scheme;
     m_isDark = (scheme == QStringLiteral("prefer-dark") || scheme == QStringLiteral("dark"));
     emit colorSchemeChanged();
-    QString cmd = QStringLiteral("gsettings set org.gnome.desktop.interface color-scheme \"%1\"").arg(scheme);
+    QString gtkCandidates = m_isDark
+        ? QStringLiteral("WhiteSur-Dark Adwaita-dark")
+        : QStringLiteral("WhiteSur Adwaita");
+    QString cmd = QStringLiteral(
+        "gsettings set org.gnome.desktop.interface color-scheme '%1'; "
+        "for t in %2; do if [ -d \"/usr/share/themes/$t\" ]; then gsettings set org.gnome.desktop.interface gtk-theme \"$t\"; break; fi; done"
+    ).arg(scheme, gtkCandidates);
     QProcess::startDetached(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), cmd});
     refreshWallpaper();
 }
