@@ -85,19 +85,19 @@ ApplicationWindow {
     property bool showMinimiseSubmenu: false
 
     // macOS Dock proportions: 1:1 with Apple Design Resources (macOS Sonoma / Sequoia)
-    readonly property real baseIconSize: 54
-    readonly property real maxIconSize: 96
+    readonly property real baseIconSize: 48
+    readonly property real maxIconSize: 84
     readonly property real iconStretch: 1.0
     readonly property real baseIconWidth: Math.round(baseIconSize * iconStretch)
-    readonly property real effectRadius: 210
-    readonly property real itemSpacing: 10
-    readonly property real pillHeight: 76
-    readonly property real pillRadius: 24
-    readonly property real pillPaddingH: 14
+    readonly property real effectRadius: 180
+    readonly property real itemSpacing: 8
+    readonly property real pillHeight: 62
+    readonly property real pillRadius: 18
+    readonly property real pillPaddingH: 10
 
     // Total resting width of content row
     readonly property real restingAppsWidth: dockItems.length * (baseIconWidth + itemSpacing)
-    readonly property real restingSeparatorWidth: 25
+    readonly property real restingSeparatorWidth: 18
     readonly property real restingRightWidth: rightItems.length * (baseIconWidth + itemSpacing)
     readonly property real totalRestingWidth: restingAppsWidth + restingSeparatorWidth + restingRightWidth
     readonly property real restingPillWidth: totalRestingWidth + pillPaddingH * 2
@@ -282,6 +282,19 @@ ApplicationWindow {
         visible: false
     }
 
+    // --- Floating Drop Shadow for Dock Pill (Analytical GPU Glow) ---
+    RectangularGlow {
+        id: dockShadow
+        anchors.fill: dockPill
+        anchors.margins: -10
+        anchors.bottomMargin: -14
+        glowRadius: 16
+        spread: 0.04
+        color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.50) : Qt.rgba(0, 0, 0, 0.24)
+        cornerRadius: dockWindow.pillRadius + 8
+        z: 35
+    }
+
     // --- Main Glass Dock Pill Container (1:1 with Apple Design Resources) ---
     Item {
         id: dockPill
@@ -346,7 +359,7 @@ ApplicationWindow {
                 id: blurPass1
                 anchors.fill: wpDownsampled
                 source: wpDownsampled
-                radius: 48
+                radius: 36
                 transparentBorder: false
                 visible: false
             }
@@ -370,7 +383,7 @@ ApplicationWindow {
                 id: blurPass2
                 anchors.fill: wpUpscaled
                 source: wpUpscaled
-                radius: 24
+                radius: 20
                 transparentBorder: false
                 visible: false
             }
@@ -395,11 +408,11 @@ ApplicationWindow {
                 id: pillTint
                 anchors.fill: parent
                 radius: dockWindow.pillRadius
-                color: dockWindow.isDark ? Qt.rgba(0.12, 0.12, 0.14, 0.58)
-                                         : Qt.rgba(1.0, 1.0, 1.0, 0.34)
+                color: dockWindow.isDark ? Qt.rgba(0.12, 0.12, 0.15, 0.58)
+                                         : Qt.rgba(1.0, 1.0, 1.0, 0.38)
                 border.width: 1
-                border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.18)
-                                                : Qt.rgba(1, 1, 1, 0.55)
+                border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.16)
+                                                : Qt.rgba(1, 1, 1, 0.45)
             }
 
             // Top specular highlight rim (macOS signature glass edge catch-light)
@@ -407,36 +420,12 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.leftMargin: 20
-                anchors.rightMargin: 20
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
                 height: 1
-                color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.75)
-                opacity: 0.8
+                color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.85)
+                opacity: 0.9
             }
-        }
-
-        // Multi-layer ambient drop shadow around the floating pill
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: -1
-            radius: dockWindow.pillRadius + 1
-            color: "transparent"
-            border.color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(0, 0, 0, 0.12)
-            border.width: 1
-            z: -2
-        }
-
-        DropShadow {
-            anchors.fill: dockGlass
-            source: dockGlass
-            radius: dockWindow.isDark ? 22 : 16
-            samples: 25
-            spread: 0.0
-            horizontalOffset: 0
-            verticalOffset: dockWindow.isDark ? 8 : 6
-            color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.40) : Qt.rgba(0, 0, 0, 0.18)
-            transparentBorder: true
-            z: -3
         }
 
         // Master MouseArea strictly over the Dock Pill
@@ -462,7 +451,7 @@ ApplicationWindow {
             id: contentRow
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 11
+            anchors.bottomMargin: 10
             spacing: dockWindow.itemSpacing
 
             // Left Section: Pinned Applications
@@ -502,6 +491,21 @@ ApplicationWindow {
                         }
                         scale: appItem.itemScale
 
+                        // Icon contact drop shadow onto dock glass floor
+                        DropShadow {
+                            anchors.fill: iconImg
+                            anchors.margins: -4
+                            source: iconImg
+                            radius: 3
+                            samples: 9
+                            horizontalOffset: 0
+                            verticalOffset: 1.5
+                            spread: 0.0
+                            color: Qt.rgba(0, 0, 0, 0.28)
+                            transparentBorder: true
+                            z: 0
+                        }
+
                         Image {
                             id: iconImg
                             anchors.fill: parent
@@ -509,8 +513,9 @@ ApplicationWindow {
                             fillMode: Image.PreserveAspectFit
                             smooth: true
                             mipmap: true
-                            sourceSize.width: 128
-                            sourceSize.height: 128
+                            sourceSize.width: 96
+                            sourceSize.height: 96
+                            z: 1
 
                             // Bounce animation on launch
                             SequentialAnimation on y {
@@ -526,6 +531,7 @@ ApplicationWindow {
                         Item {
                             anchors.fill: parent
                             visible: modelData.isCalendar === true
+                            z: 2
 
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -559,10 +565,10 @@ ApplicationWindow {
                         width: 4
                         height: 4
                         radius: 2
-                        color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.82) : Qt.rgba(0, 0, 0, 0.72)
+                        color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0, 0, 0, 0.75)
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.top: parent.bottom
-                        anchors.topMargin: 3
+                        anchors.topMargin: 2
                         visible: (sysProc.runningApps && sysProc.runningApps.indexOf(modelData.id) !== -1) || modelData.id === "finder"
                     }
 
@@ -750,9 +756,18 @@ ApplicationWindow {
                 Rectangle {
                     anchors.centerIn: parent
                     width: 1
-                    height: 42
+                    height: 36
                     radius: 0.5
-                    color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.18)
+                    color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.16)
+                }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    anchors.horizontalCenterOffset: 1
+                    width: 1
+                    height: 36
+                    radius: 0.5
+                    color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(1, 1, 1, 0.45)
                 }
 
                 MouseArea {
@@ -816,14 +831,31 @@ ApplicationWindow {
                         }
                         scale: rightItem.itemScale
 
+                        // Icon contact drop shadow onto dock glass floor
+                        DropShadow {
+                            anchors.fill: rightIconImg
+                            anchors.margins: -4
+                            source: rightIconImg
+                            radius: 3
+                            samples: 9
+                            horizontalOffset: 0
+                            verticalOffset: 1.5
+                            spread: 0.0
+                            color: Qt.rgba(0, 0, 0, 0.28)
+                            transparentBorder: true
+                            z: 0
+                        }
+
                         Image {
+                            id: rightIconImg
                             anchors.fill: parent
                             source: "../../../../../../Library/Application/Icons/png/" + modelData.icon
                             fillMode: Image.PreserveAspectFit
                             smooth: true
                             mipmap: true
-                            sourceSize.width: 128
-                            sourceSize.height: 128
+                            sourceSize.width: 96
+                            sourceSize.height: 96
+                            z: 1
                         }
                     }
 
