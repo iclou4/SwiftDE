@@ -90,7 +90,7 @@ ApplicationWindow {
     readonly property real iconStretch: 1.0
     readonly property real baseIconWidth: Math.round(baseIconSize * iconStretch)
     readonly property real effectRadius: 180
-    readonly property real itemSpacing: 8
+    readonly property real itemSpacing: 10
     readonly property real pillHeight: 62
     readonly property real pillRadius: 18
     readonly property real pillPaddingH: 10
@@ -117,11 +117,10 @@ ApplicationWindow {
         { id: "contacts", name: "Contacts", icon: "Contacts.png", isRunning: false, canUnpin: true, command: "gnome-contacts || true" },
         { id: "reminders", name: "Reminders", icon: "Reminders.png", isRunning: false, canUnpin: true, command: "gnome-todo || true" },
         { id: "notes", name: "Notes", icon: "Notes.png", isRunning: false, canUnpin: true, command: "gnome-text-editor || gedit || true" },
-        { id: "freeform", name: "Freeform", icon: "Freeform.png", isRunning: false, canUnpin: true, command: "libreoffice --draw || true" },
-        { id: "tv", name: "TV", icon: "TV.png", isRunning: false, canUnpin: true, command: "totem || vlc || true" },
         { id: "music", name: "Music", icon: "Music.png", isRunning: false, canUnpin: true, command: "rhythmbox || true" },
+        { id: "tv", name: "TV", icon: "TV.png", isRunning: false, canUnpin: true, command: "totem || vlc || true" },
+        { id: "podcasts", name: "Podcasts", icon: "Podcasts.png", isRunning: false, canUnpin: true, command: "true" },
         { id: "news", name: "News", icon: "News.png", isRunning: false, canUnpin: true, command: "liferea || true" },
-        { id: "appstore", name: "App Store", icon: "App Store.png", isRunning: false, canUnpin: true, command: "gnome-software || true" },
         { id: "settings", name: "System Settings", icon: "Settings.png", isRunning: false, canUnpin: true, command: "gnome-control-center || true" }
     ]
 
@@ -282,17 +281,25 @@ ApplicationWindow {
         visible: false
     }
 
-    // --- Floating Drop Shadow for Dock Pill (Analytical GPU Glow) ---
-    RectangularGlow {
-        id: dockShadow
-        anchors.fill: dockPill
-        anchors.margins: -10
-        anchors.bottomMargin: -14
-        glowRadius: 16
-        spread: 0.04
-        color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.50) : Qt.rgba(0, 0, 0, 0.24)
-        cornerRadius: dockWindow.pillRadius + 8
+    // --- Downward Floating Drop Shadow (Strictly Below Dock Pill, 1:1 with macOS) ---
+    Item {
+        id: dockDownwardShadow
+        anchors.top: dockPill.bottom
+        anchors.topMargin: -8
+        anchors.horizontalCenter: dockPill.horizontalCenter
+        width: dockPill.width - 6
+        height: 18
         z: 35
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 8
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0, 0, 0, 0.22) }
+                GradientStop { position: 0.5; color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.16) : Qt.rgba(0, 0, 0, 0.07) }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
+        }
     }
 
     // --- Main Glass Dock Pill Container (1:1 with Apple Design Resources) ---
@@ -408,11 +415,11 @@ ApplicationWindow {
                 id: pillTint
                 anchors.fill: parent
                 radius: dockWindow.pillRadius
-                color: dockWindow.isDark ? Qt.rgba(0.12, 0.12, 0.15, 0.58)
-                                         : Qt.rgba(1.0, 1.0, 1.0, 0.38)
+                color: dockWindow.isDark ? Qt.rgba(0.12, 0.12, 0.14, 0.60)
+                                         : Qt.rgba(1.0, 1.0, 1.0, 0.42)
                 border.width: 1
                 border.color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.16)
-                                                : Qt.rgba(1, 1, 1, 0.45)
+                                                : Qt.rgba(1, 1, 1, 0.52)
             }
 
             // Top specular highlight rim (macOS signature glass edge catch-light)
@@ -420,10 +427,10 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
+                anchors.leftMargin: dockWindow.pillRadius
+                anchors.rightMargin: dockWindow.pillRadius
                 height: 1
-                color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.85)
+                color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(1, 1, 1, 0.85)
                 opacity: 0.9
             }
         }
@@ -535,25 +542,24 @@ ApplicationWindow {
 
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.top: parent.top
-                                anchors.topMargin: Math.round(parent.height * 0.10)
+                                y: Math.round(parent.height * 0.13)
                                 text: {
                                     var m = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
                                     return m[new Date().getMonth()]
                                 }
                                 font.family: sfBold.name
                                 font.bold: true
-                                font.pixelSize: Math.max(7, Math.round(parent.height * 0.15))
+                                font.pixelSize: Math.round(parent.height * 0.17)
                                 color: "#ffffff"
                             }
 
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.top: parent.top
-                                anchors.topMargin: Math.round(parent.height * 0.38)
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.verticalCenterOffset: Math.round(parent.height * 0.11)
                                 text: "" + new Date().getDate()
                                 font.family: sfMedium.name
-                                font.pixelSize: Math.round(parent.height * 0.44)
+                                font.pixelSize: Math.round(parent.height * 0.46)
                                 color: "#1d1d1f"
                             }
                         }
