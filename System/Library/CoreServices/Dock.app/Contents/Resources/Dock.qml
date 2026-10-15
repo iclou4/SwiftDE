@@ -85,25 +85,28 @@ ApplicationWindow {
     property bool showMinimiseSubmenu: false
 
     // macOS Dock proportions: 1:1 with Apple Design Resources (macOS Sonoma / Sequoia)
-    readonly property real baseIconSize: 40
+    readonly property real baseIconSize: 42
     readonly property real maxIconSize: 72
     readonly property real iconStretch: 1.0
     readonly property real baseIconWidth: Math.round(baseIconSize * iconStretch)
     readonly property real effectRadius: 180
-    readonly property real itemSpacing: 10
-    readonly property real pillHeight: 68
-    readonly property real pillRadius: 20
-    readonly property real pillPaddingH: 12
+    readonly property real itemSpacing: 4
+    readonly property real pillHeight: 60
+    readonly property real pillRadius: 16
+    readonly property real pillPaddingH: 10
+    readonly property real restingSeparatorWidth: 14
 
-    // Total resting width of content row
+    // Total resting width of content row (Zone 1 + Sep 1 + Zone 2 + Sep 2 + Zone 3)
     readonly property real restingAppsWidth: dockItems.length * (baseIconWidth + itemSpacing)
-    readonly property real restingSeparatorWidth: 18
+    readonly property real restingSep1Width: restingSeparatorWidth
+    readonly property real restingRecentWidth: recentItems.length * (baseIconWidth + itemSpacing)
+    readonly property real restingSep2Width: restingSeparatorWidth
     readonly property real restingRightWidth: rightItems.length * (baseIconWidth + itemSpacing)
-    readonly property real totalRestingWidth: restingAppsWidth + restingSeparatorWidth + restingRightWidth
+    readonly property real totalRestingWidth: restingAppsWidth + restingSep1Width + restingRecentWidth + restingSep2Width + restingRightWidth
     readonly property real restingPillWidth: totalRestingWidth + pillPaddingH * 2
     readonly property real restingPillLeft: Math.round((dockWindow.width - restingPillWidth) / 2)
 
-    // Pinned Applications (Finder is ALWAYS #1 and cannot be unpinned)
+    // Pinned Applications (Zone 1, 1:1 with Apple Design Resources)
     property var dockItems: [
         { id: "finder", name: "Finder", icon: "Finder.png", isRunning: true, canUnpin: false, command: "nautilus ~ || xdg-open ~ || true" },
         { id: "launchpad", name: "Launchpad", icon: "Launchpad.png", isRunning: false, canUnpin: true, command: "launchpad" },
@@ -124,9 +127,17 @@ ApplicationWindow {
         { id: "settings", name: "System Settings", icon: "Settings.png", isRunning: false, canUnpin: true, command: "gnome-control-center || true" }
     ]
 
-    // Right-side items: Folder for Downloads, Trash
+    // Recent Applications (Zone 2, 1:1 with Apple Design Resources)
+    property var recentItems: [
+        { id: "textedit", name: "TextEdit", icon: "TextEdit.png", isRunning: false, canUnpin: true, command: "gnome-text-editor || gedit || true" },
+        { id: "preview", name: "Preview", icon: "Preview.png", isRunning: false, canUnpin: true, command: "eog || loupe || true" },
+        { id: "generic_app", name: "App", icon: "No App.png", isRunning: false, canUnpin: true, command: "true" }
+    ]
+
+    // Right-side items: Folders, Documents & Trash (Zone 3, 1:1 with Apple Design Resources)
     property var rightItems: [
-        { id: "downloads", name: "Downloads", icon: "Downloads.png", isRunning: false, canUnpin: true, command: "nautilus ~/Downloads || true", isFolder: true },
+        { id: "folder", name: "Documents", icon: "Folder.png", isRunning: false, canUnpin: true, command: "nautilus ~/Documents || true", isFolder: true },
+        { id: "document", name: "Document", icon: "Document.png", isRunning: false, canUnpin: true, command: "xdg-open ~ || true" },
         { id: "trash", name: "Trash", icon: "Trash Empty.png", isRunning: false, canUnpin: false, command: "nautilus trash:/// || true", isTrash: true }
     ]
 
@@ -150,12 +161,37 @@ ApplicationWindow {
 
     // Unpin item logic (Finder at index 0 can NEVER be unpinned)
     function unpinItem(index) {
-        if (index <= 0 || index >= dockItems.length) return
-        var next = []
-        for (var i = 0; i < dockItems.length; ++i) {
-            if (i !== index) next.push(dockItems[i])
+        if (contextMenuTargetItem) {
+            var pIdx = dockItems.indexOf(contextMenuTargetItem)
+            if (pIdx > 0) {
+                var next = []
+                for (var i = 0; i < dockItems.length; ++i) if (i !== pIdx) next.push(dockItems[i])
+                dockItems = next
+                closeAllMenus()
+                return
+            }
+            var rIdx = recentItems.indexOf(contextMenuTargetItem)
+            if (rIdx !== -1) {
+                var nextR = []
+                for (var j = 0; j < recentItems.length; ++j) if (j !== rIdx) nextR.push(recentItems[j])
+                recentItems = nextR
+                closeAllMenus()
+                return
+            }
+            var wIdx = rightItems.indexOf(contextMenuTargetItem)
+            if (wIdx !== -1) {
+                var nextW = []
+                for (var k = 0; k < rightItems.length; ++k) if (k !== wIdx) nextW.push(rightItems[k])
+                rightItems = nextW
+                closeAllMenus()
+                return
+            }
         }
-        dockItems = next
+        if (index > 0 && index < dockItems.length) {
+            var nextD = []
+            for (var d = 0; d < dockItems.length; ++d) if (d !== index) nextD.push(dockItems[d])
+            dockItems = nextD
+        }
         closeAllMenus()
     }
 
@@ -281,25 +317,28 @@ ApplicationWindow {
         visible: false
     }
 
-    // --- Downward Floating Drop Shadow (Strictly Below Dock Pill, 1:1 with macOS) ---
-    Item {
-        id: dockDownwardShadow
-        anchors.top: dockPill.bottom
-        anchors.topMargin: -8
-        anchors.horizontalCenter: dockPill.horizontalCenter
-        width: dockPill.width - 6
-        height: 18
-        z: 35
+    // Multi-directional ambient floating drop shadow behind the dock pill (1:1 with Apple Design Resources)
+    Rectangle {
+        id: dockShadowCaster
+        anchors.fill: dockPill
+        radius: dockWindow.pillRadius
+        color: "black"
+        visible: false
+        z: 32
+    }
 
-        Rectangle {
-            anchors.fill: parent
-            radius: 8
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0, 0, 0, 0.22) }
-                GradientStop { position: 0.5; color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.16) : Qt.rgba(0, 0, 0, 0.07) }
-                GradientStop { position: 1.0; color: "transparent" }
-            }
-        }
+    DropShadow {
+        id: dockPillShadow
+        anchors.fill: dockShadowCaster
+        source: dockShadowCaster
+        horizontalOffset: 0
+        verticalOffset: 6
+        radius: 16
+        samples: 25
+        spread: 0.05
+        color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0, 0, 0, 0.20)
+        transparentBorder: true
+        z: 33
     }
 
     // --- Main Glass Dock Pill Container (1:1 with Apple Design Resources) ---
@@ -458,7 +497,7 @@ ApplicationWindow {
             id: contentRow
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 16
+            anchors.bottomMargin: 10
             spacing: dockWindow.itemSpacing
 
             // Left Section: Pinned Applications
@@ -556,11 +595,11 @@ ApplicationWindow {
                         width: 4
                         height: 4
                         radius: 2
-                        color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0, 0, 0, 0.75)
+                        color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0, 0, 0, 0.70)
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.top: parent.bottom
-                        anchors.topMargin: 7
-                        visible: (sysProc.runningApps && sysProc.runningApps.indexOf(modelData.id) !== -1) || modelData.id === "finder"
+                        anchors.topMargin: 2
+                        visible: Boolean((sysProc.runningApps && sysProc.runningApps.indexOf(modelData.id) !== -1) || modelData.id === "finder")
                     }
 
                     MouseArea {
@@ -737,9 +776,9 @@ ApplicationWindow {
                 }
             }
 
-            // --- Vertical Dock Divider / Separator Line (1:1 with Apple Design Resources) ---
+            // --- Separator 1: Between Pinned Apps and Recent Apps ---
             Item {
-                id: separatorItem
+                id: separator1Item
                 width: dockWindow.restingSeparatorWidth
                 height: dockWindow.baseIconSize
                 anchors.bottom: parent.bottom
@@ -747,7 +786,7 @@ ApplicationWindow {
                 Rectangle {
                     anchors.centerIn: parent
                     width: 1
-                    height: 32
+                    height: 24
                     radius: 0.5
                     color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.16)
                 }
@@ -756,31 +795,31 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     anchors.horizontalCenterOffset: 1
                     width: 1
-                    height: 32
+                    height: 24
                     radius: 0.5
                     color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(1, 1, 1, 0.45)
                 }
 
                 MouseArea {
-                    id: separatorMa
+                    id: sep1Ma
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.RightButton | Qt.LeftButton
                     cursorShape: Qt.ArrowCursor
 
                     onEntered: {
-                        var pt = separatorItem.mapToItem(dockWindow.contentItem, width / 2, height / 2)
+                        var pt = separator1Item.mapToItem(dockWindow.contentItem, width / 2, height / 2)
                         dockWindow.handleScreenPointerMove(pt.x)
                     }
 
                     onPositionChanged: (mouse) => {
-                        var pt = separatorItem.mapToItem(dockWindow.contentItem, mouse.x, mouse.y)
+                        var pt = separator1Item.mapToItem(dockWindow.contentItem, mouse.x, mouse.y)
                         dockWindow.handleScreenPointerMove(pt.x)
                     }
 
                     onClicked: (mouse) => {
                         if (mouse.button === Qt.RightButton) {
-                            var globalPt = separatorItem.mapToItem(null, width / 2, 0)
+                            var globalPt = separator1Item.mapToItem(null, width / 2, 0)
                             dockWindow.separatorMenuX = globalPt.x
                             dockWindow.contextMenuOpen = false
                             dockWindow.separatorMenuOpen = true
@@ -789,14 +828,14 @@ ApplicationWindow {
                 }
             }
 
-            // Right Section: Folders / Files & Trash
+            // Zone 2: Recent Applications (1:1 with Apple Design Resources)
             Repeater {
-                id: rightRepeater
-                model: dockWindow.rightItems
+                id: recentRepeater
+                model: dockWindow.recentItems
 
                 Item {
-                    id: rightItem
-                    property real restingCenterX: dockWindow.restingPillLeft + dockWindow.pillPaddingH + dockWindow.restingAppsWidth + dockWindow.restingSeparatorWidth + (index + 0.5) * (dockWindow.baseIconWidth + dockWindow.itemSpacing)
+                    id: recentItem
+                    property real restingCenterX: dockWindow.restingPillLeft + dockWindow.pillPaddingH + dockWindow.restingAppsWidth + dockWindow.restingSep1Width + (index + 0.5) * (dockWindow.baseIconWidth + dockWindow.itemSpacing)
                     property real itemSize: dockWindow.computeSizeForRestingX(restingCenterX)
                     property real itemScale: itemSize / dockWindow.baseIconSize
                     property real itemWidth: Math.round(itemSize * dockWindow.iconStretch)
@@ -806,6 +845,276 @@ ApplicationWindow {
                     anchors.bottom: parent.bottom
 
                     property bool isDraggingThis: dockWindow.draggingIndex === (dockWindow.dockItems.length + index)
+                    opacity: isDraggingThis ? 0.35 : 1.0
+
+                    Item {
+                        id: recentVisualContainer
+                        width: dockWindow.baseIconWidth
+                        height: dockWindow.baseIconSize
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+
+                        transformOrigin: {
+                            if (dockWindow.dockPosition === "left") return Item.Left
+                            if (dockWindow.dockPosition === "right") return Item.Right
+                            return Item.Bottom
+                        }
+                        scale: recentItem.itemScale
+
+                        Image {
+                            id: recentIconImg
+                            anchors.fill: parent
+                            source: "../../../../../../Library/Application/Icons/png/" + modelData.icon
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                            sourceSize.width: 96
+                            sourceSize.height: 96
+                            z: 1
+                        }
+                    }
+
+                    // Running dot indicator for recent apps
+                    Rectangle {
+                        id: recentRunningDot
+                        width: 4
+                        height: 4
+                        radius: 2
+                        color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0, 0, 0, 0.70)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.bottom
+                        anchors.topMargin: 2
+                        visible: Boolean(sysProc.runningApps && sysProc.runningApps.indexOf(modelData.id) !== -1)
+                    }
+
+                    MouseArea {
+                        id: recentMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+                        property real pressSceneX: 0
+                        property real pressSceneY: 0
+                        property bool isDragStarted: false
+
+                        onEntered: {
+                            var pt = recentItem.mapToItem(dockWindow.contentItem, width / 2, height / 2)
+                            dockWindow.handleScreenPointerMove(pt.x)
+                        }
+
+                        onPressed: (mouse) => {
+                            if (mouse.button === Qt.LeftButton) {
+                                var pt = recentItem.mapToItem(null, mouse.x, mouse.y)
+                                pressSceneX = pt.x
+                                pressSceneY = pt.y
+                                isDragStarted = false
+                            }
+                        }
+
+                        onPositionChanged: (mouse) => {
+                            var ptContent = recentItem.mapToItem(dockWindow.contentItem, mouse.x, mouse.y)
+                            dockWindow.handleScreenPointerMove(ptContent.x)
+
+                            if (mouse.buttons & Qt.LeftButton) {
+                                var pt = recentItem.mapToItem(null, mouse.x, mouse.y)
+                                var dy = pressSceneY - pt.y
+                                var dx = Math.abs(pressSceneX - pt.x)
+                                if ((dy > 14 || dx > 18) && !isDragStarted) {
+                                    if (modelData.canUnpin !== false) {
+                                        isDragStarted = true
+                                        dockWindow.draggingItem = modelData
+                                        dockWindow.draggingIndex = dockWindow.dockItems.length + index
+                                    }
+                                }
+                                if (isDragStarted) {
+                                    dockWindow.dragGlobalX = pt.x
+                                    dockWindow.dragGlobalY = pt.y
+                                    dockWindow.showRemovePrompt = (pt.y < dockPill.y - 12)
+                                }
+                            }
+                        }
+
+                        onReleased: (mouse) => {
+                            if (isDragStarted) {
+                                if (dockWindow.showRemovePrompt) {
+                                    dockWindow.contextMenuTargetItem = modelData
+                                    dockWindow.unpinItem(dockWindow.draggingIndex)
+                                }
+                                dockWindow.draggingItem = null
+                                dockWindow.draggingIndex = -1
+                                dockWindow.showRemovePrompt = false
+                                isDragStarted = false
+                            }
+                        }
+
+                        onClicked: (mouse) => {
+                            if (mouse.button === Qt.RightButton) {
+                                var globalPt = recentItem.mapToItem(null, width / 2, 0)
+                                dockWindow.contextMenuTargetItem = modelData
+                                dockWindow.contextMenuTargetIndex = dockWindow.dockItems.length + index
+                                dockWindow.contextMenuX = globalPt.x
+                                dockWindow.separatorMenuOpen = false
+                                dockWindow.contextMenuOpen = true
+                            } else if (mouse.button === Qt.LeftButton && !isDragStarted) {
+                                dockWindow.launchItem(modelData)
+                            }
+                        }
+                    }
+
+                    // Hover tooltip
+                    Item {
+                        id: recentTooltip
+                        visible: recentMa.containsMouse && !dockWindow.contextMenuOpen && !dockWindow.separatorMenuOpen && !dockWindow.draggingItem && !recentMa.isDragStarted
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: Math.round(recentItem.itemSize - dockWindow.baseIconSize) + 7
+                        z: 100
+
+                        readonly property real bubblePaddingH: 9
+                        readonly property real bubbleW: Math.round(recentLabel.implicitWidth + bubblePaddingH * 2)
+                        readonly property real bubbleH: 22
+                        readonly property real cornerRadius: 5
+                        readonly property real triW: 10
+                        readonly property real triH: 5
+
+                        width: bubbleW
+                        height: bubbleH + triH
+
+                        Shape {
+                            anchors.fill: parent
+                            layer.enabled: true
+                            layer.samples: 4
+
+                            ShapePath {
+                                strokeColor: dockWindow.tooltipBorderColor
+                                strokeWidth: 0.6
+                                fillColor: dockWindow.tooltipBgColor
+                                capStyle: ShapePath.RoundCap
+                                joinStyle: ShapePath.RoundJoin
+
+                                startX: recentTooltip.cornerRadius; startY: 0
+                                PathLine { x: recentTooltip.bubbleW - recentTooltip.cornerRadius; y: 0 }
+                                PathArc {
+                                    x: recentTooltip.bubbleW
+                                    y: recentTooltip.cornerRadius
+                                    radiusX: recentTooltip.cornerRadius
+                                    radiusY: recentTooltip.cornerRadius
+                                    direction: PathArc.Clockwise
+                                }
+                                PathLine { x: recentTooltip.bubbleW; y: recentTooltip.bubbleH - recentTooltip.cornerRadius }
+                                PathArc {
+                                    x: recentTooltip.bubbleW - recentTooltip.cornerRadius
+                                    y: recentTooltip.bubbleH
+                                    radiusX: recentTooltip.cornerRadius
+                                    radiusY: recentTooltip.cornerRadius
+                                    direction: PathArc.Clockwise
+                                }
+                                PathLine { x: Math.round((recentTooltip.bubbleW + recentTooltip.triW) / 2); y: recentTooltip.bubbleH }
+                                PathLine { x: Math.round(recentTooltip.bubbleW / 2); y: recentTooltip.bubbleH + recentTooltip.triH }
+                                PathLine { x: Math.round((recentTooltip.bubbleW - recentTooltip.triW) / 2); y: recentTooltip.bubbleH }
+                                PathLine { x: recentTooltip.cornerRadius; y: recentTooltip.bubbleH }
+                                PathArc {
+                                    x: 0
+                                    y: recentTooltip.bubbleH - recentTooltip.cornerRadius
+                                    radiusX: recentTooltip.cornerRadius
+                                    radiusY: recentTooltip.cornerRadius
+                                    direction: PathArc.Clockwise
+                                }
+                                PathLine { x: 0; y: recentTooltip.cornerRadius }
+                                PathArc {
+                                    x: recentTooltip.cornerRadius
+                                    y: 0
+                                    radiusX: recentTooltip.cornerRadius
+                                    radiusY: recentTooltip.cornerRadius
+                                    direction: PathArc.Clockwise
+                                }
+                            }
+                        }
+
+                        Text {
+                            id: recentLabel
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: parent.top
+                            anchors.topMargin: Math.round((recentTooltip.bubbleH - implicitHeight) / 2)
+                            text: modelData.name
+                            font.family: sfMedium.name
+                            font.weight: Font.Medium
+                            font.pixelSize: 12
+                            color: dockWindow.tooltipTextColor
+                        }
+                    }
+                }
+            }
+
+            // --- Separator 2: Between Recent Apps and Folders/Trash ---
+            Item {
+                id: separator2Item
+                width: dockWindow.restingSeparatorWidth
+                height: dockWindow.baseIconSize
+                anchors.bottom: parent.bottom
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 1
+                    height: 24
+                    radius: 0.5
+                    color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.16)
+                }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    anchors.horizontalCenterOffset: 1
+                    width: 1
+                    height: 24
+                    radius: 0.5
+                    color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(1, 1, 1, 0.45)
+                }
+
+                MouseArea {
+                    id: sep2Ma
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.RightButton | Qt.LeftButton
+                    cursorShape: Qt.ArrowCursor
+
+                    onEntered: {
+                        var pt = separator2Item.mapToItem(dockWindow.contentItem, width / 2, height / 2)
+                        dockWindow.handleScreenPointerMove(pt.x)
+                    }
+
+                    onPositionChanged: (mouse) => {
+                        var pt = separator2Item.mapToItem(dockWindow.contentItem, mouse.x, mouse.y)
+                        dockWindow.handleScreenPointerMove(pt.x)
+                    }
+
+                    onClicked: (mouse) => {
+                        if (mouse.button === Qt.RightButton) {
+                            var globalPt = separator2Item.mapToItem(null, width / 2, 0)
+                            dockWindow.separatorMenuX = globalPt.x
+                            dockWindow.contextMenuOpen = false
+                            dockWindow.separatorMenuOpen = true
+                        }
+                    }
+                }
+            }
+
+            // Zone 3: Folders, Documents & Trash (1:1 with Apple Design Resources)
+            Repeater {
+                id: rightRepeater
+                model: dockWindow.rightItems
+
+                Item {
+                    id: rightItem
+                    property real restingCenterX: dockWindow.restingPillLeft + dockWindow.pillPaddingH + dockWindow.restingAppsWidth + dockWindow.restingSep1Width + dockWindow.restingRecentWidth + dockWindow.restingSep2Width + (index + 0.5) * (dockWindow.baseIconWidth + dockWindow.itemSpacing)
+                    property real itemSize: dockWindow.computeSizeForRestingX(restingCenterX)
+                    property real itemScale: itemSize / dockWindow.baseIconSize
+                    property real itemWidth: Math.round(itemSize * dockWindow.iconStretch)
+
+                    width: itemWidth
+                    height: dockWindow.baseIconSize
+                    anchors.bottom: parent.bottom
+
+                    property bool isDraggingThis: dockWindow.draggingIndex === (dockWindow.dockItems.length + dockWindow.recentItems.length + index)
                     opacity: isDraggingThis ? 0.35 : 1.0
 
                     Item {
