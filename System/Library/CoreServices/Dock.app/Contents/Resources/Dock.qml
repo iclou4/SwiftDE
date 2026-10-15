@@ -85,15 +85,15 @@ ApplicationWindow {
     property bool showMinimiseSubmenu: false
 
     // macOS Dock proportions: 1:1 with Apple Design Resources (macOS Sonoma / Sequoia)
-    readonly property real baseIconSize: 48
-    readonly property real maxIconSize: 84
+    readonly property real baseIconSize: 40
+    readonly property real maxIconSize: 72
     readonly property real iconStretch: 1.0
     readonly property real baseIconWidth: Math.round(baseIconSize * iconStretch)
     readonly property real effectRadius: 180
     readonly property real itemSpacing: 10
-    readonly property real pillHeight: 62
-    readonly property real pillRadius: 18
-    readonly property real pillPaddingH: 10
+    readonly property real pillHeight: 68
+    readonly property real pillRadius: 20
+    readonly property real pillPaddingH: 12
 
     // Total resting width of content row
     readonly property real restingAppsWidth: dockItems.length * (baseIconWidth + itemSpacing)
@@ -458,7 +458,7 @@ ApplicationWindow {
             id: contentRow
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 10
+            anchors.bottomMargin: 16
             spacing: dockWindow.itemSpacing
 
             // Left Section: Pinned Applications
@@ -497,21 +497,6 @@ ApplicationWindow {
                             return Item.Bottom
                         }
                         scale: appItem.itemScale
-
-                        // Icon contact drop shadow onto dock glass floor
-                        DropShadow {
-                            anchors.fill: iconImg
-                            anchors.margins: -4
-                            source: iconImg
-                            radius: 3
-                            samples: 9
-                            horizontalOffset: 0
-                            verticalOffset: 1.5
-                            spread: 0.0
-                            color: Qt.rgba(0, 0, 0, 0.28)
-                            transparentBorder: true
-                            z: 0
-                        }
 
                         Image {
                             id: iconImg
@@ -574,7 +559,7 @@ ApplicationWindow {
                         color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0, 0, 0, 0.75)
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.top: parent.bottom
-                        anchors.topMargin: 2
+                        anchors.topMargin: 7
                         visible: (sysProc.runningApps && sysProc.runningApps.indexOf(modelData.id) !== -1) || modelData.id === "finder"
                     }
 
@@ -762,7 +747,7 @@ ApplicationWindow {
                 Rectangle {
                     anchors.centerIn: parent
                     width: 1
-                    height: 36
+                    height: 32
                     radius: 0.5
                     color: dockWindow.isDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.16)
                 }
@@ -771,7 +756,7 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     anchors.horizontalCenterOffset: 1
                     width: 1
-                    height: 36
+                    height: 32
                     radius: 0.5
                     color: dockWindow.isDark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(1, 1, 1, 0.45)
                 }
@@ -836,21 +821,6 @@ ApplicationWindow {
                             return Item.Bottom
                         }
                         scale: rightItem.itemScale
-
-                        // Icon contact drop shadow onto dock glass floor
-                        DropShadow {
-                            anchors.fill: rightIconImg
-                            anchors.margins: -4
-                            source: rightIconImg
-                            radius: 3
-                            samples: 9
-                            horizontalOffset: 0
-                            verticalOffset: 1.5
-                            spread: 0.0
-                            color: Qt.rgba(0, 0, 0, 0.28)
-                            transparentBorder: true
-                            z: 0
-                        }
 
                         Image {
                             id: rightIconImg
